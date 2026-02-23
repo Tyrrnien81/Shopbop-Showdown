@@ -47,7 +47,7 @@ function Lobby() {
       setPlayers([
         { playerId: '1', username: 'Host', isReady: true, isHost: true },
         { playerId: '2', username: 'FashionQueen', isReady: true },
-        { playerId: '3', username: 'StyleGuru', isReady: false },
+        { playerId: '3', username: 'StyleGuru', isReady: true },
       ]);
       setCurrentPlayer({ playerId: '1', username: 'Host', isReady: true, isHost: true });
     } catch (error) {
