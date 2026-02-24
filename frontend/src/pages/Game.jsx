@@ -70,11 +70,12 @@ function Game() {
   const [selectedProducts, setSelectedProducts] = useState(new Set());
   const [validationErrors, setValidationErrors] = useState([]);
 
-  // Virtual try-on state
-  const [tryOnImage, setTryOnImage] = useState(null);
+  // Virtual try-on modal state
+  const [showModal, setShowModal] = useState(false);
+  const [generatedImages, setGeneratedImages] = useState([]);
+  const [selectedImage, setSelectedImage] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationError, setGenerationError] = useState(null);
-  const [showTryOn, setShowTryOn] = useState(false); // Toggle between board and try-on view
 
   const budget = game?.budget || 5000;
   const theme = game?.theme || 'Runway Ready';
@@ -139,31 +140,46 @@ function Game() {
     setValidationErrors(validateOutfit());
   }, [currentOutfit.products, validateOutfit]);
 
-  // Manual generate function (no auto-generation)
+  // Open modal and generate 3 images
   const handleGenerateTryOn = async () => {
     if (currentOutfit.products.length === 0) {
       setGenerationError('Please select items first');
       return;
     }
 
-    setShowTryOn(true); // Switch to try-on view
+    setShowModal(true);
     setIsGenerating(true);
     setGenerationError(null);
+    setGeneratedImages([]);
+    setSelectedImage(null);
 
     try {
-      const result = await generateTryOnImage(currentOutfit.products);
-      setTryOnImage(`data:${result.mimeType};base64,${result.imageData}`);
+      const images = await generateTryOnImage(currentOutfit.products);
+      // Convert to data URLs
+      const imageUrls = images.map(img => `data:${img.mimeType};base64,${img.imageData}`);
+      setGeneratedImages(imageUrls);
     } catch (err) {
-      console.error('Failed to generate try-on image:', err);
+      console.error('Failed to generate try-on images:', err);
       setGenerationError(err.message || 'Failed to generate preview');
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // Go back to Pinterest board view
-  const handleBackToBoard = () => {
-    setShowTryOn(false);
+  // Close modal
+  const handleCloseModal = () => {
+    setShowModal(false);
+  };
+
+  // Select an image
+  const handleSelectImage = (imageUrl) => {
+    setSelectedImage(imageUrl);
+  };
+
+  // Confirm selection and close modal
+  const handleConfirmSelection = () => {
+    // Could save selectedImage to state/store if needed
+    setShowModal(false);
   };
 
   const handleSubmitOutfit = useCallback(async () => {
@@ -209,8 +225,8 @@ function Game() {
         return newSet;
       });
       removeProductFromOutfit(product.productSin);
-      // Clear try-on image when outfit changes
-      setTryOnImage(null);
+      // Clear selected image when outfit changes
+      setSelectedImage(null);
     } else {
       // Check mutual exclusion before adding
       const violation = wouldViolateMutualExclusion(product);
@@ -223,8 +239,8 @@ function Game() {
       const success = addProductToOutfit(product);
       if (success) {
         setSelectedProducts((prev) => new Set([...prev, product.productSin]));
-        // Clear try-on image when outfit changes
-        setTryOnImage(null);
+        // Clear selected image when outfit changes
+        setSelectedImage(null);
       }
     }
   };
@@ -297,122 +313,72 @@ function Game() {
           </div>
         </main>
 
-        {/* The Board (Outfit Panel) - Toggle between Pinterest and Try-On */}
+        {/* The Board (Outfit Panel) - Always show Pinterest board */}
         <aside className="outfit-panel">
-          {!showTryOn ? (
-            <>
-              {/* Pinterest Board View */}
-              <div className="outfit-panel-header">
-                <h3>The Board</h3>
-                <span className="outfit-panel-subtitle">Your Curated Look</span>
-              </div>
+          <div className="outfit-panel-header">
+            <h3>The Board</h3>
+            <span className="outfit-panel-subtitle">Your Curated Look</span>
+          </div>
 
-              {/* Outfit Requirements Checklist */}
-              <div className="outfit-requirements">
-                <div className={`requirement ${getOutfitCategories().has('Dresses') || (getOutfitCategories().has('Tops') && getOutfitCategories().has('Bottoms')) ? 'met' : ''}`}>
-                  {getOutfitCategories().has('Dresses') ? '✓ Dress' : getOutfitCategories().has('Tops') && getOutfitCategories().has('Bottoms') ? '✓ Top + Bottoms' : '○ Dress OR Top + Bottoms'}
-                </div>
-                <div className={`requirement ${getOutfitCategories().has('Shoes') ? 'met' : ''}`}>
-                  {getOutfitCategories().has('Shoes') ? '✓ Shoes' : '○ Shoes'}
-                </div>
-                <div className={`requirement ${getOutfitCategories().has('Jewelry') ? 'met' : ''}`}>
-                  {getOutfitCategories().has('Jewelry') ? '✓ Jewelry' : '○ Jewelry'}
-                </div>
-              </div>
+          {/* Outfit Requirements Checklist */}
+          <div className="outfit-requirements">
+            <div className={`requirement ${getOutfitCategories().has('Dresses') || (getOutfitCategories().has('Tops') && getOutfitCategories().has('Bottoms')) ? 'met' : ''}`}>
+              {getOutfitCategories().has('Dresses') ? '✓ Dress' : getOutfitCategories().has('Tops') && getOutfitCategories().has('Bottoms') ? '✓ Top + Bottoms' : '○ Dress OR Top + Bottoms'}
+            </div>
+            <div className={`requirement ${getOutfitCategories().has('Shoes') ? 'met' : ''}`}>
+              {getOutfitCategories().has('Shoes') ? '✓ Shoes' : '○ Shoes'}
+            </div>
+            <div className={`requirement ${getOutfitCategories().has('Jewelry') ? 'met' : ''}`}>
+              {getOutfitCategories().has('Jewelry') ? '✓ Jewelry' : '○ Jewelry'}
+            </div>
+          </div>
 
-              {/* Pinterest-style outfit board */}
-              <div className="outfit-items">
-                <div className="outfit-items-grid">
-                  {currentOutfit.products.map((product) => (
-                    <div key={product.productSin} className="outfit-item">
-                      <img src={product.imageUrl} alt={product.name} />
-                      <span className="outfit-item-label">{product.category}</span>
-                      <button
-                        className="outfit-item-remove"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleProductClick(product);
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                  {/* Empty slots */}
-                  {[...Array(Math.max(0, 4 - currentOutfit.products.length))].map((_, i) => (
-                    <div key={`empty-${i}`} className="outfit-item outfit-empty-slot">
-                      +
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Generate Try-On Button */}
-              <div className="tryon-section">
-                <button
-                  onClick={handleGenerateTryOn}
-                  className="btn btn-secondary generate-btn"
-                  disabled={isGenerating || currentOutfit.products.length === 0}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                    <circle cx="12" cy="7" r="4"/>
-                  </svg>
-                  See it on a Model
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Try-On View */}
-              <div className="outfit-panel-header">
-                <button className="back-btn" onClick={handleBackToBoard}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M19 12H5M12 19l-7-7 7-7"/>
-                  </svg>
-                  Back
-                </button>
-                <h3>Virtual Try-On</h3>
-                <span className="outfit-panel-subtitle">AI-Powered Preview</span>
-              </div>
-
-              <div className="tryon-fullview">
-                {isGenerating ? (
-                  <div className="tryon-loading">
-                    <div className="spinner"></div>
-                    <p>Generating your look...</p>
-                  </div>
-                ) : tryOnImage ? (
-                  <div className="tryon-image-container">
-                    <img src={tryOnImage} alt="Virtual try-on preview" className="tryon-image" />
-                  </div>
-                ) : generationError ? (
-                  <div className="tryon-error">
-                    <p>{generationError}</p>
-                    <button onClick={handleGenerateTryOn} className="btn btn-small btn-outline">
-                      Try Again
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-
-              {/* Regenerate button */}
-              {tryOnImage && !isGenerating && (
-                <div className="tryon-section">
+          {/* Pinterest-style outfit board */}
+          <div className="outfit-items">
+            <div className="outfit-items-grid">
+              {currentOutfit.products.map((product) => (
+                <div key={product.productSin} className="outfit-item">
+                  <img src={product.imageUrl} alt={product.name} />
+                  <span className="outfit-item-label">{product.category}</span>
                   <button
-                    onClick={handleGenerateTryOn}
-                    className="btn btn-secondary generate-btn"
-                    disabled={isGenerating}
+                    className="outfit-item-remove"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleProductClick(product);
+                    }}
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
-                    </svg>
-                    Regenerate
+                    ×
                   </button>
                 </div>
-              )}
-            </>
-          )}
+              ))}
+              {/* Empty slots */}
+              {[...Array(Math.max(0, 4 - currentOutfit.products.length))].map((_, i) => (
+                <div key={`empty-${i}`} className="outfit-item outfit-empty-slot">
+                  +
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Generate Try-On Button */}
+          <div className="tryon-section">
+            <button
+              onClick={handleGenerateTryOn}
+              className="btn btn-secondary generate-btn"
+              disabled={isGenerating || currentOutfit.products.length === 0}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+              See it on a Model
+            </button>
+            {selectedImage && (
+              <div className="selected-preview">
+                <img src={selectedImage} alt="Selected look" />
+              </div>
+            )}
+          </div>
 
           <div className="outfit-panel-footer">
             <div className="budget-used">
@@ -438,6 +404,78 @@ function Game() {
           </div>
         </aside>
       </div>
+
+      {/* Try-On Modal */}
+      {showModal && (
+        <div className="tryon-modal-overlay" onClick={handleCloseModal}>
+          <div className="tryon-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="tryon-modal-header">
+              <h2>Choose Your Look</h2>
+              <p>Select your favorite AI-generated outfit preview</p>
+              <button className="modal-close-btn" onClick={handleCloseModal}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+
+            <div className="tryon-modal-content">
+              {isGenerating ? (
+                <div className="tryon-modal-loading">
+                  <div className="spinner"></div>
+                  <p>Generating 3 unique looks...</p>
+                  <span>Please wait ~10-15 seconds for all images</span>
+                </div>
+              ) : generationError ? (
+                <div className="tryon-modal-error">
+                  <p>{generationError}</p>
+                  <button onClick={handleGenerateTryOn} className="btn btn-secondary">
+                    Try Again
+                  </button>
+                </div>
+              ) : (
+                <div className="tryon-images-grid">
+                  {generatedImages.map((imageUrl, index) => (
+                    <div
+                      key={index}
+                      className={`tryon-image-option ${selectedImage === imageUrl ? 'selected' : ''}`}
+                      onClick={() => handleSelectImage(imageUrl)}
+                    >
+                      <img src={imageUrl} alt={`Look ${index + 1}`} />
+                      <div className="tryon-image-label">Look {index + 1}</div>
+                      {selectedImage === imageUrl && (
+                        <div className="tryon-image-check">
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <path d="M20 6L9 17l-5-5"/>
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {!isGenerating && generatedImages.length > 0 && (
+              <div className="tryon-modal-footer">
+                <button className="btn btn-outline" onClick={handleGenerateTryOn}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                  </svg>
+                  Regenerate All
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleConfirmSelection}
+                  disabled={!selectedImage}
+                >
+                  {selectedImage ? 'Use This Look' : 'Select a Look'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

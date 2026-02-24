@@ -18,94 +18,129 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Proxy endpoint for Gemini virtual try-on
-app.post('/api/tryon/generate', async (req, res) => {
-  if (!GEMINI_API_KEY) {
-    return res.status(500).json({ error: 'API key not configured' });
-  }
+// Helper function to generate a single image
+async function generateSingleImage(products, productImages, variation = 0) {
+  const variationPrompts = [
+    'standing in a confident pose',
+    'in a relaxed, natural pose',
+    'walking forward with dynamic movement'
+  ];
 
-  try {
-    const { products, productImages } = req.body;
-
-    if (!products || products.length === 0) {
-      return res.status(400).json({ error: 'No products provided' });
-    }
-
-    // Build the prompt
-    const prompt = `Look at these product images I'm providing. Generate a high-quality fashion photograph of a model wearing ALL of these EXACT items together as an outfit.
+  const prompt = `Look at these product images I'm providing. Generate a high-quality fashion photograph of a model wearing ALL of these EXACT items together as an outfit.
 
 The items are:
 ${products.map((p, i) => `${i + 1}. ${p.name} (${p.category}) by ${p.brand}`).join('\n')}
 
 CRITICAL REQUIREMENTS:
 - The model MUST wear items that match the EXACT colors, patterns, and styles shown in the reference images
-- Image 1 shows the first item, Image 2 shows the second item, etc.
 - Combine all items into one cohesive outfit on a single model
+- The model should be ${variationPrompts[variation % variationPrompts.length]}
 - Full-body shot, professional fashion photography style
 - Clean white or neutral studio background
 - All items must be clearly visible
 - Photorealistic, high resolution`;
 
-    // Build parts array with text prompt and all product images
-    const parts = [{ text: prompt }];
+  const parts = [{ text: prompt }];
 
-    if (productImages && productImages.length > 0) {
-      for (let i = 0; i < productImages.length; i++) {
-        const img = productImages[i];
-        if (img.base64) {
-          parts.push({
-            inlineData: {
-              mimeType: img.mimeType || 'image/jpeg',
-              data: img.base64
-            }
-          });
-          parts.push({ text: `(Above: ${products[i]?.name || 'Item'} - ${products[i]?.category || 'Fashion'})` });
+  if (productImages && productImages.length > 0) {
+    for (let i = 0; i < productImages.length; i++) {
+      const img = productImages[i];
+      if (img.base64) {
+        parts.push({
+          inlineData: {
+            mimeType: img.mimeType || 'image/jpeg',
+            data: img.base64
+          }
+        });
+        parts.push({ text: `(Above: ${products[i]?.name || 'Item'} - ${products[i]?.category || 'Fashion'})` });
+      }
+    }
+  }
+
+  const requestBody = {
+    contents: [{ parts }],
+    generationConfig: {
+      responseModalities: ['TEXT', 'IMAGE']
+    }
+  };
+
+  const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error?.message || 'Failed to generate image');
+  }
+
+  const data = await response.json();
+  const candidates = data.candidates;
+
+  if (candidates && candidates[0]?.content?.parts) {
+    for (const part of candidates[0].content.parts) {
+      if (part.inlineData) {
+        return {
+          imageData: part.inlineData.data,
+          mimeType: part.inlineData.mimeType || 'image/png'
+        };
+      }
+    }
+  }
+
+  throw new Error('No image in response');
+}
+
+// Helper function to delay execution
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Proxy endpoint for Gemini virtual try-on (generates 3 images)
+app.post('/api/tryon/generate', async (req, res) => {
+  if (!GEMINI_API_KEY) {
+    return res.status(500).json({ error: 'API key not configured' });
+  }
+
+  try {
+    const { products, productImages, count = 3 } = req.body;
+
+    if (!products || products.length === 0) {
+      return res.status(400).json({ error: 'No products provided' });
+    }
+
+    const imageCount = Math.min(count, 3); // Max 3 images
+
+    // Generate images sequentially with delay to avoid rate limiting
+    const images = [];
+    const errors = [];
+
+    for (let i = 0; i < imageCount; i++) {
+      try {
+        console.log(`Generating image ${i + 1} of ${imageCount}...`);
+        const result = await generateSingleImage(products, productImages, i);
+        images.push(result);
+        console.log(`Image ${i + 1} generated successfully`);
+
+        // Add delay between requests to avoid rate limiting (except after last one)
+        if (i < imageCount - 1) {
+          console.log('Waiting 2 seconds before next request...');
+          await delay(2000);
         }
+      } catch (err) {
+        console.error(`Error generating image ${i + 1}:`, err.message);
+        errors.push(err.message);
+        // Continue trying to generate other images
       }
     }
 
-    const requestBody = {
-      contents: [{
-        parts: parts
-      }],
-      generationConfig: {
-        responseModalities: ['TEXT', 'IMAGE']
-      }
-    };
-
-    // Call Gemini API
-    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Gemini API error:', errorData);
-      return res.status(response.status).json({
-        error: errorData.error?.message || 'Failed to generate image'
+    if (images.length === 0) {
+      return res.status(500).json({
+        error: errors[0] || 'Failed to generate any images'
       });
     }
 
-    const data = await response.json();
-
-    // Extract the generated image from the response
-    const candidates = data.candidates;
-    if (candidates && candidates[0]?.content?.parts) {
-      for (const part of candidates[0].content.parts) {
-        if (part.inlineData) {
-          return res.json({
-            imageData: part.inlineData.data,
-            mimeType: part.inlineData.mimeType || 'image/png'
-          });
-        }
-      }
-    }
-
-    return res.status(500).json({ error: 'No image generated in response' });
+    console.log(`Successfully generated ${images.length} of ${imageCount} images`);
+    return res.json({ images });
 
   } catch (error) {
     console.error('Error in /api/tryon/generate:', error);

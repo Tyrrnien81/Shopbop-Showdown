@@ -59,7 +59,8 @@ export async function generateTryOnImage(products) {
           category: p.category,
           brand: p.brand
         })),
-        productImages: productImages
+        productImages: productImages,
+        count: 3 // Request 3 images
       })
     });
 
@@ -68,7 +69,10 @@ export async function generateTryOnImage(products) {
       throw new Error(errorData.error || 'Failed to generate image');
     }
 
-    return await response.json();
+    const data = await response.json();
+
+    // Return array of images
+    return data.images || [];
   } catch (error) {
     console.error('Error generating try-on image:', error);
     throw error;
