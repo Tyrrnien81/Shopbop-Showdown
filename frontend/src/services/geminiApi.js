@@ -79,6 +79,60 @@ export async function generateTryOnImage(products) {
   }
 }
 
+/**
+ * Generate a single virtual try-on image with a specific variation
+ * @param {Array} products - Array of selected products with imageUrl, name, category
+ * @param {number} variation - Variation index (0, 1, or 2) for different poses
+ * @returns {Promise<Object>} - Object with imageData (base64) and mimeType
+ */
+export async function generateSingleTryOnImage(products, variation = 0) {
+  if (!products || products.length === 0) {
+    throw new Error('No products provided for try-on');
+  }
+
+  // Convert all product images to base64
+  const productImagesPromises = products.map(async (p) => {
+    try {
+      const base64 = await imageUrlToBase64(p.imageUrl);
+      return { base64, mimeType: 'image/jpeg' };
+    } catch (err) {
+      console.warn(`Failed to load image for ${p.name}:`, err);
+      return { base64: null, mimeType: null };
+    }
+  });
+
+  const productImages = await Promise.all(productImagesPromises);
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/tryon/generate-single`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        products: products.map(p => ({
+          name: p.name,
+          category: p.category,
+          brand: p.brand
+        })),
+        productImages: productImages,
+        variation: variation
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to generate image');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error generating single try-on image:', error);
+    throw error;
+  }
+}
+
 export default {
-  generateTryOnImage
+  generateTryOnImage,
+  generateSingleTryOnImage
 };

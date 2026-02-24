@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { generateTryOnImage } from '../services/geminiApi';
+import { generateTryOnImage, generateSingleTryOnImage } from '../services/geminiApi';
 import useGameStore from '../store/gameStore';
 
 // Mock products for development - expanded catalog
@@ -72,9 +72,10 @@ function Game() {
 
   // Virtual try-on modal state
   const [showModal, setShowModal] = useState(false);
-  const [generatedImages, setGeneratedImages] = useState([]);
+  const [generatedImages, setGeneratedImages] = useState([null, null, null]); // 3 slots
+  const [loadingImages, setLoadingImages] = useState([false, false, false]); // Loading state per image
   const [selectedImage, setSelectedImage] = useState(null);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [generationError, setGenerationError] = useState(null);
 
   const budget = game?.budget || 5000;
@@ -140,29 +141,76 @@ function Game() {
     setValidationErrors(validateOutfit());
   }, [currentOutfit.products, validateOutfit]);
 
-  // Open modal and generate 3 images
-  const handleGenerateTryOn = async () => {
+  // Open modal (no generation)
+  const handleOpenModal = () => {
     if (currentOutfit.products.length === 0) {
       setGenerationError('Please select items first');
       return;
     }
-
     setShowModal(true);
-    setIsGenerating(true);
     setGenerationError(null);
-    setGeneratedImages([]);
+  };
+
+  // Generate all 3 images
+  const handleGenerateAll = async () => {
+    setIsGeneratingAll(true);
+    setGenerationError(null);
+    setLoadingImages([true, true, true]);
+    setGeneratedImages([null, null, null]);
     setSelectedImage(null);
 
     try {
       const images = await generateTryOnImage(currentOutfit.products);
-      // Convert to data URLs
-      const imageUrls = images.map(img => `data:${img.mimeType};base64,${img.imageData}`);
+      // Convert to data URLs and fill slots
+      const imageUrls = [null, null, null];
+      images.forEach((img, i) => {
+        if (i < 3) {
+          imageUrls[i] = `data:${img.mimeType};base64,${img.imageData}`;
+        }
+      });
       setGeneratedImages(imageUrls);
     } catch (err) {
       console.error('Failed to generate try-on images:', err);
       setGenerationError(err.message || 'Failed to generate preview');
     } finally {
-      setIsGenerating(false);
+      setIsGeneratingAll(false);
+      setLoadingImages([false, false, false]);
+    }
+  };
+
+  // Regenerate a single image
+  const handleRegenerateOne = async (index) => {
+    if (currentOutfit.products.length === 0) return;
+
+    // Set loading for this specific image
+    setLoadingImages(prev => {
+      const newState = [...prev];
+      newState[index] = true;
+      return newState;
+    });
+
+    try {
+      const image = await generateSingleTryOnImage(currentOutfit.products, index);
+      const imageUrl = `data:${image.mimeType};base64,${image.imageData}`;
+
+      setGeneratedImages(prev => {
+        const newImages = [...prev];
+        newImages[index] = imageUrl;
+        return newImages;
+      });
+
+      // If the regenerated image was selected, update selection
+      if (selectedImage === generatedImages[index]) {
+        setSelectedImage(imageUrl);
+      }
+    } catch (err) {
+      console.error(`Failed to regenerate image ${index + 1}:`, err);
+    } finally {
+      setLoadingImages(prev => {
+        const newState = [...prev];
+        newState[index] = false;
+        return newState;
+      });
     }
   };
 
@@ -363,9 +411,9 @@ function Game() {
           {/* Generate Try-On Button */}
           <div className="tryon-section">
             <button
-              onClick={handleGenerateTryOn}
+              onClick={handleOpenModal}
               className="btn btn-secondary generate-btn"
-              disabled={isGenerating || currentOutfit.products.length === 0}
+              disabled={currentOutfit.products.length === 0}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -420,30 +468,66 @@ function Game() {
             </div>
 
             <div className="tryon-modal-content">
-              {isGenerating ? (
-                <div className="tryon-modal-loading">
-                  <div className="spinner"></div>
-                  <p>Generating 3 unique looks...</p>
-                  <span>Please wait ~10-15 seconds for all images</span>
-                </div>
-              ) : generationError ? (
+              {generationError && !generatedImages.some(img => img) ? (
                 <div className="tryon-modal-error">
                   <p>{generationError}</p>
-                  <button onClick={handleGenerateTryOn} className="btn btn-secondary">
+                  <button onClick={handleGenerateAll} className="btn btn-secondary">
                     Try Again
+                  </button>
+                </div>
+              ) : !generatedImages.some(img => img) && !isGeneratingAll && !loadingImages.some(l => l) ? (
+                <div className="tryon-modal-empty">
+                  <div className="tryon-empty-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                      <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                  </div>
+                  <h3>Ready to Generate</h3>
+                  <p>Click the button below to create 3 AI-generated outfit previews</p>
+                  <button onClick={handleGenerateAll} className="btn btn-primary generate-looks-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                    </svg>
+                    Generate Looks
                   </button>
                 </div>
               ) : (
                 <div className="tryon-images-grid">
-                  {generatedImages.map((imageUrl, index) => (
+                  {[0, 1, 2].map((index) => (
                     <div
                       key={index}
-                      className={`tryon-image-option ${selectedImage === imageUrl ? 'selected' : ''}`}
-                      onClick={() => handleSelectImage(imageUrl)}
+                      className={`tryon-image-option ${selectedImage === generatedImages[index] && generatedImages[index] ? 'selected' : ''} ${loadingImages[index] ? 'loading' : ''}`}
+                      onClick={() => generatedImages[index] && !loadingImages[index] && handleSelectImage(generatedImages[index])}
                     >
-                      <img src={imageUrl} alt={`Look ${index + 1}`} />
+                      {loadingImages[index] ? (
+                        <div className="tryon-image-loading">
+                          <div className="spinner"></div>
+                          <span>Generating...</span>
+                        </div>
+                      ) : generatedImages[index] ? (
+                        <>
+                          <img src={generatedImages[index]} alt={`Look ${index + 1}`} />
+                          <button
+                            className="tryon-refresh-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRegenerateOne(index);
+                            }}
+                            title="Regenerate this look"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                            </svg>
+                          </button>
+                        </>
+                      ) : (
+                        <div className="tryon-image-empty">
+                          <span>Look {index + 1}</span>
+                        </div>
+                      )}
                       <div className="tryon-image-label">Look {index + 1}</div>
-                      {selectedImage === imageUrl && (
+                      {selectedImage === generatedImages[index] && generatedImages[index] && !loadingImages[index] && (
                         <div className="tryon-image-check">
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                             <path d="M20 6L9 17l-5-5"/>
@@ -456,23 +540,25 @@ function Game() {
               )}
             </div>
 
-            {!isGenerating && generatedImages.length > 0 && (
-              <div className="tryon-modal-footer">
-                <button className="btn btn-outline" onClick={handleGenerateTryOn}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
-                  </svg>
-                  Regenerate All
-                </button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleConfirmSelection}
-                  disabled={!selectedImage}
-                >
-                  {selectedImage ? 'Use This Look' : 'Select a Look'}
-                </button>
-              </div>
-            )}
+            <div className="tryon-modal-footer">
+              <button
+                className="btn btn-outline"
+                onClick={handleGenerateAll}
+                disabled={isGeneratingAll || loadingImages.some(l => l)}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                </svg>
+                Regenerate All
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleConfirmSelection}
+                disabled={!selectedImage}
+              >
+                {selectedImage ? 'Use This Look' : 'Select a Look'}
+              </button>
+            </div>
           </div>
         </div>
       )}

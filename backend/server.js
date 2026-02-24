@@ -148,6 +148,31 @@ app.post('/api/tryon/generate', async (req, res) => {
   }
 });
 
+// Endpoint for generating a single image (for individual regeneration)
+app.post('/api/tryon/generate-single', async (req, res) => {
+  if (!GEMINI_API_KEY) {
+    return res.status(500).json({ error: 'API key not configured' });
+  }
+
+  try {
+    const { products, productImages, variation = 0 } = req.body;
+
+    if (!products || products.length === 0) {
+      return res.status(400).json({ error: 'No products provided' });
+    }
+
+    console.log(`Generating single image with variation ${variation}...`);
+    const result = await generateSingleImage(products, productImages, variation);
+    console.log('Single image generated successfully');
+
+    return res.json(result);
+
+  } catch (error) {
+    console.error('Error in /api/tryon/generate-single:', error);
+    return res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Backend server running on http://localhost:${PORT}`);
   if (!GEMINI_API_KEY) {
