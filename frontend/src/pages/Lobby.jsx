@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { gameApi } from '../services/api';
 import useGameStore from '../store/gameStore';
@@ -11,14 +11,18 @@ function Lobby() {
     game,
     players,
     currentPlayer,
+    userPhoto,
     setGame,
     setPlayers,
     setCurrentPlayer,
+    setUserPhoto,
     setLoading,
     setError,
     isLoading,
     error,
   } = useGameStore();
+
+  const fileInputRef = useRef(null);
 
   const [isHost, setIsHost] = useState(true); // Mock as host for dev
 
@@ -98,6 +102,27 @@ function Lobby() {
     navigator.clipboard.writeText(gameId);
   };
 
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload an image file');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setUserPhoto(reader.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemovePhoto = () => {
+    setUserPhoto(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -157,6 +182,40 @@ function Lobby() {
           </div>
         </div>
       )}
+
+      {/* Photo Upload Section */}
+      <section className="photo-upload-section">
+        <h2>Your Photo</h2>
+        <p className="photo-upload-hint">Upload a photo so the AI model looks like you!</p>
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept="image/*"
+          onChange={handlePhotoUpload}
+          style={{ display: 'none' }}
+        />
+        {userPhoto ? (
+          <div className="photo-preview">
+            <img src={userPhoto} alt="Your photo" className="photo-preview-img" />
+            <button className="photo-remove-btn" onClick={handleRemovePhoto}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+              Remove
+            </button>
+          </div>
+        ) : (
+          <button className="photo-upload-btn" onClick={() => fileInputRef.current?.click()}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <span>Upload Photo</span>
+            <span className="photo-upload-optional">Optional</span>
+          </button>
+        )}
+      </section>
 
       {/* Players Section */}
       <section className="players-section">

@@ -58,6 +58,7 @@ function Game() {
   const {
     game,
     currentOutfit,
+    userPhoto,
     addProductToOutfit,
     removeProductFromOutfit,
     setLoading,
@@ -160,7 +161,7 @@ function Game() {
     setSelectedImage(null);
 
     try {
-      const images = await generateTryOnImage(currentOutfit.products);
+      const images = await generateTryOnImage(currentOutfit.products, userPhoto);
       // Convert to data URLs and fill slots
       const imageUrls = [null, null, null];
       images.forEach((img, i) => {
@@ -190,7 +191,7 @@ function Game() {
     });
 
     try {
-      const image = await generateSingleTryOnImage(currentOutfit.products, index);
+      const image = await generateSingleTryOnImage(currentOutfit.products, index, userPhoto);
       const imageUrl = `data:${image.mimeType};base64,${image.imageData}`;
 
       setGeneratedImages(prev => {

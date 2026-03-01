@@ -29,7 +29,7 @@ async function imageUrlToBase64(imageUrl) {
  * @param {Array} products - Array of selected products with imageUrl, name, category
  * @returns {Promise<Object>} - Object with imageData (base64) and mimeType
  */
-export async function generateTryOnImage(products) {
+export async function generateTryOnImage(products, userPhoto = null) {
   if (!products || products.length === 0) {
     throw new Error('No products provided for try-on');
   }
@@ -60,7 +60,8 @@ export async function generateTryOnImage(products) {
           brand: p.brand
         })),
         productImages: productImages,
-        count: 3 // Request 3 images
+        count: 3, // Request 3 images
+        userPhoto: userPhoto || undefined
       })
     });
 
@@ -85,7 +86,7 @@ export async function generateTryOnImage(products) {
  * @param {number} variation - Variation index (0, 1, or 2) for different poses
  * @returns {Promise<Object>} - Object with imageData (base64) and mimeType
  */
-export async function generateSingleTryOnImage(products, variation = 0) {
+export async function generateSingleTryOnImage(products, variation = 0, userPhoto = null) {
   if (!products || products.length === 0) {
     throw new Error('No products provided for try-on');
   }
@@ -116,7 +117,8 @@ export async function generateSingleTryOnImage(products, variation = 0) {
           brand: p.brand
         })),
         productImages: productImages,
-        variation: variation
+        variation: variation,
+        userPhoto: userPhoto || undefined
       })
     });
 
