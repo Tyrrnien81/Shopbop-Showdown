@@ -135,7 +135,7 @@ function Game() {
     const fetchProducts = async () => {
       setLoadingProducts(true);
       try {
-        const filterParams = { limit: 5, theme };
+        const filterParams = { limit: 10, theme };
         if (sortBy) filterParams.sort = sortBy;
         if (selectedColor && selectedColor !== 'All') filterParams.color = selectedColor;
         if (appliedMinPrice) filterParams.minPrice = appliedMinPrice;

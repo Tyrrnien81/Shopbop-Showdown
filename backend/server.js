@@ -252,7 +252,7 @@ app.get('/api/products/search', async (req, res) => {
       // Category-specific search — fire one search per keyword for reliability
       const cat = CATEGORIES.find(c => c.id === category.toLowerCase() || c.name.toLowerCase() === category.toLowerCase());
       const queries = cat ? cat.queries : [category];
-      const perQueryLimit = Math.max(Math.ceil(limitNum / queries.length), 5);
+      const perQueryLimit = Math.max(Math.ceil(limitNum / queries.length), 8);
 
       const fetches = queries.map(q =>
         searchShopbop(`${colorPrefix}${q}`, perQueryLimit, offset, opts)
