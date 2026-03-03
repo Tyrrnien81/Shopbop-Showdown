@@ -666,7 +666,9 @@ function Game() {
             {chatMessages.map((msg, i) => (
               <div key={i}>
                 <div className={`chat-msg ${msg.role === 'user' ? 'chat-msg-user' : 'chat-msg-bot'}`}>
-                  {msg.text}
+                  {msg.text.split(/\*\*(.*?)\*\*/).map((part, j) =>
+                    j % 2 === 1 ? <strong key={j}>{part}</strong> : part
+                  )}
                 </div>
                 {msg.products && msg.products.length > 0 && (
                   <div className="chat-products">
