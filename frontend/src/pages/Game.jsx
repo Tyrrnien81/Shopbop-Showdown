@@ -29,11 +29,8 @@ const COLOR_OPTIONS = [
   { value: 'Gray', label: 'Gray', hex: '#999999' },
 ];
 
-// Outfit validation rules - Dresses are mutually exclusive with Tops/Bottoms
-const MUTUALLY_EXCLUSIVE = [
-  ['Dresses', 'Tops'],
-  ['Dresses', 'Bottoms'],
-];
+// Outfit validation rules - only one dress allowed
+const MAX_ONE_CATEGORIES = ['Dresses'];
 
 function Game() {
   const { gameId } = useParams();
@@ -45,8 +42,6 @@ function Game() {
     addProductToOutfit,
     removeProductFromOutfit,
     setLoading,
-    setError,
-    error,
   } = useGameStore();
 
   const [timeRemaining, setTimeRemaining] = useState(game?.timeLimit || 300);
@@ -71,6 +66,9 @@ function Game() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [generationError, setGenerationError] = useState(null);
+
+  // Popup notification state
+  const [popupMessage, setPopupMessage] = useState(null);
 
   // Chat assistant state
   const [chatOpen, setChatOpen] = useState(false);
@@ -166,7 +164,7 @@ function Game() {
       } catch (err) {
         if (stale) return;
         console.error('Failed to load products:', err);
-        setError('Could not load products from ShopBop');
+        setPopupMessage('Could not load products from ShopBop');
       } finally {
         if (!stale) setLoadingProducts(false);
       }
@@ -183,20 +181,16 @@ function Game() {
     return categories;
   }, [currentOutfit.products]);
 
-  // Check if adding a product would violate mutual exclusion rules
+  // Check if adding a product would violate outfit rules (max one dress)
   const wouldViolateMutualExclusion = useCallback((product) => {
-    const currentCategories = getOutfitCategories();
-
-    for (const [cat1, cat2] of MUTUALLY_EXCLUSIVE) {
-      if (product.category === cat1 && currentCategories.has(cat2)) {
-        return `Cannot add ${product.category} when you have ${cat2} selected`;
-      }
-      if (product.category === cat2 && currentCategories.has(cat1)) {
-        return `Cannot add ${product.category} when you have ${cat1} selected`;
+    if (MAX_ONE_CATEGORIES.includes(product.category)) {
+      const alreadyHasOne = currentOutfit.products.some(p => p.category === product.category);
+      if (alreadyHasOne) {
+        return `You can only choose one dress at a time. Remove your current dress first!`;
       }
     }
     return null;
-  }, [getOutfitCategories]);
+  }, [currentOutfit.products]);
 
   // Validate outfit completeness
   const validateOutfit = useCallback(() => {
@@ -326,9 +320,8 @@ function Game() {
   };
 
   const handleSubmitOutfit = useCallback(async () => {
-    const errors = validateOutfit();
-    if (errors.length > 0) {
-      setError('Please complete your outfit: ' + errors.join(', '));
+    if (currentOutfit.products.length < 3) {
+      setPopupMessage('Please add at least 3 items to your outfit before submitting.');
       return;
     }
 
@@ -346,11 +339,11 @@ function Game() {
       }
       navigate(`/voting/${gameId}`);
     } catch {
-      setError('Failed to submit outfit');
+      setPopupMessage('Failed to submit outfit');
     } finally {
       setLoading(false);
     }
-  }, [currentOutfit, gameId, navigate, setError, setLoading, validateOutfit]);
+  }, [currentOutfit, gameId, navigate, setLoading]);
 
   // Timer countdown
   useEffect(() => {
@@ -383,7 +376,7 @@ function Game() {
       // Check mutual exclusion before adding
       const violation = wouldViolateMutualExclusion(product);
       if (violation) {
-        setError(violation);
+        setPopupMessage(violation);
         return;
       }
 
@@ -519,8 +512,6 @@ function Game() {
               </div>
             </div>
           </div>
-
-          {error && <div className="error-message">{error}</div>}
 
           {loadingProducts ? (
             <div className="loading" style={{ minHeight: '200px' }}>
@@ -818,6 +809,18 @@ function Game() {
                 {selectedImage ? 'Use This Look' : 'Select a Look'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup notification */}
+      {popupMessage && (
+        <div className="popup-overlay" onClick={() => setPopupMessage(null)}>
+          <div className="popup-box" onClick={(e) => e.stopPropagation()}>
+            <p>{popupMessage}</p>
+            <button className="btn btn-primary" onClick={() => setPopupMessage(null)}>
+              Got it
+            </button>
           </div>
         </div>
       )}

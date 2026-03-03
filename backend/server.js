@@ -682,16 +682,20 @@ Rules:
       .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.text}`)
       .join('\n');
 
-    const searchPrompt = `You are a search query generator for an online fashion store (Shopbop). Read the FULL conversation below and output a product search query that captures what the user wants RIGHT NOW.
+    const searchPrompt = `You are a search query generator for Shopbop.com. Read the conversation below and output a SHORT, SIMPLE product search query.
 
-RULES:
-- Output ONLY the search query on line 1 (2-5 words). No explanation.
-- Carry forward ALL context: if the user said "green" earlier and now says "party dress", output "green party dress".
-- If the user said "something for the beach" after discussing "blue outfits", output "blue beach dress".
-- Include color, occasion, and product type when mentioned anywhere in the conversation.
-- If a price limit is mentioned anywhere, output JUST the number on line 2.
-- IMPORTANT: If the user says things like "show me", "send it", "add it", "can I see those", "yes please", or "let me see" — they are asking to SEE the product the assistant just recommended. Look at the assistant's LAST message for the specific product mentioned and search for THAT. For example if the assistant said "gold metallic strappy high heels" and the user says "send it to me", output "gold metallic strappy heels".
-- Only output "SKIP" if the conversation is purely small talk with zero product context (e.g. "hello", "thanks", "bye").
+CRITICAL RULES:
+- Output ONLY the search query on line 1. No explanation, no quotes.
+- Keep queries to 2-3 words MAX. Shopbop search works best with simple terms.
+- GOOD queries: "black dress", "gold heels", "red mini skirt", "white blazer", "leather boots"
+- BAD queries: "structured architectural midi dress", "elegant evening cocktail gown", "high end luxurious outfit"
+- Format: [color] [product type]. Example: "black dress", "blue jeans", "green top"
+- ALWAYS include the color if the user mentioned one ANYWHERE in the conversation.
+- ALWAYS include the basic product type (dress, heels, boots, bag, jacket, etc.)
+- Do NOT use fancy adjectives like "architectural", "structured", "luxurious", "elegant", "sophisticated". Shopbop won't find them.
+- If a price limit is mentioned, output JUST the number on line 2.
+- If the user says "show me", "send it", "add it", "yes please" — search for the product the assistant just recommended, keeping it simple (e.g. "gold strappy heels" not "gold metallic strappy high heel sandals").
+- Only output "SKIP" if the conversation is purely small talk with zero product context.
 
 Conversation:
 ${transcript}
@@ -722,8 +726,39 @@ User: ${message}`;
         if (priceMatch && !opts.maxPrice) opts.maxPrice = parseInt(priceMatch[1]);
 
         console.log('Chat search query:', query, opts);
-        const result = await searchShopbop(query, 6, 0, opts);
+        let result = await searchShopbop(query, 6, 0, opts);
         products = result.products;
+
+        // Fallback: if no results, simplify query while preserving color + product type
+        if (products.length === 0) {
+          const words = query.split(/\s+/);
+          const colors = ['black','white','red','blue','green','pink','purple','gold','silver','brown','beige','navy','cream','orange','yellow','grey','gray','nude','tan','ivory','coral','burgundy','teal','maroon','olive'];
+          const color = words.find(w => colors.includes(w.toLowerCase()));
+          const lastWord = words[words.length - 1]; // likely the product type
+
+          // Try color + product type (e.g. "black dress")
+          if (color && lastWord.toLowerCase() !== color.toLowerCase()) {
+            const fallback1 = `${color} ${lastWord}`;
+            console.log('Chat fallback search:', fallback1, opts);
+            result = await searchShopbop(fallback1, 6, 0, opts);
+            products = result.products;
+          }
+          // Try just the product type (e.g. "dress")
+          if (products.length === 0) {
+            console.log('Chat fallback search (product type):', lastWord);
+            result = await searchShopbop(lastWord, 6, 0, opts);
+            products = result.products;
+          }
+          // Last resort: product type without price filter
+          if (products.length === 0) {
+            console.log('Chat fallback search (no filter):', lastWord);
+            result = await searchShopbop(lastWord, 6, 0, {});
+            products = result.products;
+          }
+          if (products.length > 0) {
+            reply += `\n\nI couldn't find an exact match, but here are some similar options:`;
+          }
+        }
       } catch (searchErr) {
         console.error('Chat product search failed:', searchErr.message);
       }
