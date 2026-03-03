@@ -134,69 +134,26 @@ Refs: WS event list :contentReference[oaicite:5]{index=5}
 Refs: game flow and page specs :contentReference[oaicite:6]{index=6}, endpoints for each phase :contentReference[oaicite:7]{index=7}
 
 ---
+## 6. Non-Functional Testing
 
-## 6. Test Matrix (Key Scenarios)
-
-### 6.1 Games / Lobby
-- ✅ Create game with valid inputs (theme/budget/maxPlayers/timeLimit)
-- ❌ Create game with invalid budget/timeLimit (out of range)
-- ✅ Join game until maxPlayers reached
-- ❌ Join game after maxPlayers reached (returns error)
-- ✅ Ready toggle updates correctly
-- ✅ Start game transitions status to PLAYING
-- ❌ Non-host attempts to start game (error)
-- ✅ Polling updates players every 2–3 seconds (Phase 1)
-Ref: Lobby polling expectation :contentReference[oaicite:8]{index=8}
-
-### 6.2 Products Proxy
-- ✅ Search with query + category filter
-- ✅ Pagination behavior (page/limit/totalPages)
-- ❌ Shopbop API failure → backend returns friendly error; frontend shows error message
-- ✅ Product details endpoint returns description/images/sizes (if available)
-Ref: product endpoint formats :contentReference[oaicite:9]{index=9}
-
-### 6.3 Outfit Submission
-- ✅ Submit outfit within budget
-- ❌ Submit outfit over budget (should reject or warn depending on rules)
-- ✅ Auto-submit on time expiry (frontend)
-- ✅ Voting endpoint receives anonymized outfits (no player identity)
-Ref: anonymized outfits requirement :contentReference[oaicite:10]{index=10}
-
-### 6.4 Voting / Results
-- ✅ Submit votes with ratings array
-- ❌ Vote includes own outfit (reject)
-- ✅ Results endpoint returns ranked list + stats
-Ref: votes and results response shapes :contentReference[oaicite:11]{index=11} :contentReference[oaicite:12]{index=12}
-
-### 6.5 WebSocket (Phase 2)
-- ✅ player-joined updates lobby immediately
-- ✅ time-sync keeps timers aligned
-- ✅ reconnection handling: client re-joins room and receives current state
-- ✅ server emits error event for invalid actions
-Ref: time-sync event :contentReference[oaicite:13]{index=13}
-
----
-
-## 7. Non-Functional Testing
-
-### 7.1 Performance
+### 6.1 Performance
 - Phase 1: With polling, UI remains responsive with 4–8 players.
 - Product search results render within acceptable time (target < 1–2 seconds locally).
 - WebSocket (Phase 2): state updates feel “real-time” (< 300ms typical on local network).
 
-### 7.2 Reliability / Resilience
+### 6.2 Reliability / Resilience
 - Network drop mid-game: user sees “reconnecting” and can resume.
 - Backend error responses are handled (toast/message, not app crash).
 - Duplicate submits (double-click) should be idempotent or safely rejected.
 
-### 7.3 Basic Security
+### 6.3 Basic Security
 - Session tokens not logged in client console.
 - Backend rejects malformed JWT / missing auth (if required).
 - CORS configured correctly for the deployed frontend origin.
 
 ---
 
-## 8. Regression Checklist (Run before demo)
+## 7. Regression Checklist (Run before demo)
 
 - [ ] Create game works from fresh browser session
 - [ ] Join game works from second device/incognito
@@ -210,7 +167,7 @@ Ref: time-sync event :contentReference[oaicite:13]{index=13}
 
 ---
 
-## 9. Ownership
+## 8. Ownership
 
 ### Frontend
 - Component/unit tests
@@ -229,7 +186,7 @@ Refs: shared responsibilities :contentReference[oaicite:14]{index=14}
 
 ---
 
-## 10. Open Questions / TBD
+## 9. Open Questions / TBD
 
 - Final rule on “over budget” outfits: hard reject vs warn + allow (decide and document).
 - Where session tokens are stored (memory vs localStorage) and how logout/expiry is handled.
