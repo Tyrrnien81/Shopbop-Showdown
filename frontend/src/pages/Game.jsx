@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { generateTryOnImage, generateSingleTryOnImage } from '../services/geminiApi';
-import { productApi, outfitApi } from '../services/api';
+import { productApi, outfitApi, chatApi } from '../services/api';
 import useGameStore from '../store/gameStore';
 
 // Sort options supported by the Shopbop API
@@ -72,12 +72,61 @@ function Game() {
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [generationError, setGenerationError] = useState(null);
 
+  // Chat assistant state
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'bot', text: "Hi! I'm your style assistant. Ask me for outfit ideas, or tell me what you're looking for!" },
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatMessagesRef = useRef(null);
+
   const budget = game?.budget || 5000;
   const theme = game?.theme || 'Runway Ready';
 
   const handleApplyPrice = () => {
     setAppliedMinPrice(minPrice);
     setAppliedMaxPrice(maxPrice);
+  };
+
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    if (chatMessagesRef.current) {
+      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+    }
+  }, [chatMessages, chatLoading]);
+
+  const handleSendMessage = async () => {
+    const text = chatInput.trim();
+    if (!text || chatLoading) return;
+
+    setChatInput('');
+    const updatedMessages = [...chatMessages, { role: 'user', text }];
+    setChatMessages(updatedMessages);
+    setChatLoading(true);
+
+    try {
+      // Send prior conversation history (exclude product data to keep payload small)
+      const history = updatedMessages.map(m => ({ role: m.role, text: m.text }));
+      const res = await chatApi.sendMessage({
+        message: text,
+        outfitContext: currentOutfit.products,
+        theme,
+        budget,
+        history,
+      });
+      const { reply, products } = res.data;
+      setChatMessages(prev => [...prev, { role: 'bot', text: reply, products: products?.length ? products : undefined }]);
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'bot', text: "Sorry, I couldn't process that. Try again!" }]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handleChatAddProduct = (product) => {
+    handleProductClick(product);
+    setChatMessages(prev => [...prev, { role: 'bot', text: `Added "${product.name}" to your board!` }]);
   };
 
   // Load products from ShopBop catalog (re-fetches when filters change)
@@ -587,6 +636,74 @@ function Game() {
           </div>
         </aside>
       </div>
+
+      {/* Chat Bubble */}
+      {!chatOpen && (
+        <button className="chat-bubble" onClick={() => setChatOpen(true)} title="Style Assistant">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+      )}
+
+      {/* Chat Panel */}
+      {chatOpen && (
+        <div className="chat-panel">
+          <div className="chat-header">
+            <span className="chat-header-title">Style Assistant</span>
+            <button className="chat-header-close" onClick={() => setChatOpen(false)}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+          <div className="chat-messages" ref={chatMessagesRef}>
+            {chatMessages.map((msg, i) => (
+              <div key={i}>
+                <div className={`chat-msg ${msg.role === 'user' ? 'chat-msg-user' : 'chat-msg-bot'}`}>
+                  {msg.text}
+                </div>
+                {msg.products && msg.products.length > 0 && (
+                  <div className="chat-products">
+                    {msg.products.map((p) => (
+                      <div key={p.productSin} className="chat-product-card">
+                        <img src={p.imageUrl} alt={p.name} />
+                        <div className="chat-product-info">
+                          <span className="chat-product-name">{p.name}</span>
+                          <span className="chat-product-price">${p.price.toLocaleString()}</span>
+                        </div>
+                        <button className="chat-product-add" onClick={() => handleChatAddProduct(p)}>Add</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {chatLoading && (
+              <div className="chat-typing">
+                <div className="chat-typing-dot" />
+                <div className="chat-typing-dot" />
+                <div className="chat-typing-dot" />
+              </div>
+            )}
+          </div>
+          <div className="chat-input-area">
+            <input
+              type="text"
+              placeholder="Ask for styling advice..."
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+              disabled={chatLoading}
+            />
+            <button className="chat-send-btn" onClick={handleSendMessage} disabled={chatLoading || !chatInput.trim()}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Try-On Modal */}
       {showModal && (

@@ -58,4 +58,9 @@ export const productApi = {
   getCategories: () => api.get('/categories'),
 };
 
+// Chat Assistant API
+export const chatApi = {
+  sendMessage: (data) => api.post('/chat/message', data),
+};
+
 export default api;

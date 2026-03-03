@@ -604,6 +604,139 @@ app.get('/api/games/:gameId/results', (req, res) => {
 });
 
 // ============================================================
+// GEMINI CHAT ASSISTANT
+// ============================================================
+
+const GEMINI_CHAT_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+
+async function chatWithGemini(history, systemPrompt) {
+  // history is an array of { role: 'user'|'model', text } messages
+  const contents = history.map(msg => ({
+    role: msg.role,
+    parts: [{ text: msg.text }],
+  }));
+
+  const requestBody = {
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+    contents,
+    generationConfig: { temperature: 0.8, maxOutputTokens: 1024 },
+  };
+
+  const response = await fetch(`${GEMINI_CHAT_URL}?key=${GEMINI_API_KEY}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error?.message || 'Gemini chat request failed');
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('No text in Gemini response');
+  return text;
+}
+
+// POST /api/chat/message — AI style assistant
+app.post('/api/chat/message', async (req, res) => {
+  if (!GEMINI_API_KEY) return res.status(500).json({ error: 'API key not configured' });
+
+  try {
+    const { message, outfitContext, theme, budget, history } = req.body;
+    if (!message) return res.status(400).json({ error: 'message is required' });
+
+    const outfitSummary = (outfitContext && outfitContext.length > 0)
+      ? outfitContext.map(p => `${p.name} (${p.category}, $${p.price})`).join(', ')
+      : 'empty board';
+
+    const systemPrompt = `You are a fashion styling assistant for ShopBop Showdown, a competitive outfit-building game. The player is building an outfit on the theme "${theme || 'fashion'}" with a budget of $${budget || 5000}.
+
+Their current board has: ${outfitSummary}.
+
+Rules:
+- Be concise, enthusiastic, and fashion-forward. Keep responses to 2-3 sentences max.
+- When recommending products, be SPECIFIC — name exact product types with colors and styles (e.g. "emerald green sequin mini dress" not just "a dress").
+- If the user's request is vague (e.g. "anything for a party?", "recommend me items", "what else?"), ask a short follow-up question to narrow it down. For example: "What vibe are you going for — glam, edgy, or playful?" or "Are you looking for a dress, separates, or accessories?"
+- Always carry forward context from the full conversation. If the user previously mentioned a color, style, or occasion, keep those preferences in your suggestions.
+- Do NOT just describe imaginary outfits. Your job is to help them find real products to add to their board.
+- IMPORTANT: Product cards are shown to the user automatically alongside your message. You do NOT need to "send" or "show" products — they appear automatically. If the user asks "show me", "send it", "add it", or "can I see those", just confirm what you're searching for (e.g. "Here are some gold strappy heels for you!"). The products will appear.`;
+
+    // Build Gemini conversation history from prior messages
+    const geminiHistory = [];
+    if (Array.isArray(history)) {
+      for (const msg of history) {
+        if (msg.role === 'user') {
+          geminiHistory.push({ role: 'user', text: msg.text });
+        } else if (msg.role === 'bot') {
+          geminiHistory.push({ role: 'model', text: msg.text });
+        }
+      }
+    }
+    // Append the current user message
+    geminiHistory.push({ role: 'user', text: message });
+
+    // Build conversation transcript for the keyword extractor
+    const transcript = (Array.isArray(history) ? history : [])
+      .map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.text}`)
+      .join('\n');
+
+    const searchPrompt = `You are a search query generator for an online fashion store (Shopbop). Read the FULL conversation below and output a product search query that captures what the user wants RIGHT NOW.
+
+RULES:
+- Output ONLY the search query on line 1 (2-5 words). No explanation.
+- Carry forward ALL context: if the user said "green" earlier and now says "party dress", output "green party dress".
+- If the user said "something for the beach" after discussing "blue outfits", output "blue beach dress".
+- Include color, occasion, and product type when mentioned anywhere in the conversation.
+- If a price limit is mentioned anywhere, output JUST the number on line 2.
+- IMPORTANT: If the user says things like "show me", "send it", "add it", "can I see those", "yes please", or "let me see" — they are asking to SEE the product the assistant just recommended. Look at the assistant's LAST message for the specific product mentioned and search for THAT. For example if the assistant said "gold metallic strappy high heels" and the user says "send it to me", output "gold metallic strappy heels".
+- Only output "SKIP" if the conversation is purely small talk with zero product context (e.g. "hello", "thanks", "bye").
+
+Conversation:
+${transcript}
+User: ${message}`;
+
+    // Two parallel calls: conversational reply + search keywords
+    const [rawReply, searchKeywords] = await Promise.all([
+      chatWithGemini(geminiHistory, systemPrompt),
+      chatWithGemini([{ role: 'user', text: searchPrompt }], 'You extract product search keywords from conversations. Output ONLY the search query, nothing else.'),
+    ]);
+
+    // Strip any [SEARCH: ...] block from the conversational reply
+    let reply = rawReply.replace(/\[SEARCH:\s*\{[^}]*\}\s*\]/g, '').trim();
+
+    // Parse search keywords and fetch products
+    let products = [];
+    const firstLine = searchKeywords.trim().split('\n')[0].trim().replace(/['"]/g, '');
+
+    if (firstLine && firstLine.toUpperCase() !== 'SKIP') {
+      try {
+        const lines = searchKeywords.trim().split('\n').map(l => l.trim()).filter(Boolean);
+        const query = firstLine;
+        const opts = {};
+        if (lines[1] && /^\d+$/.test(lines[1])) {
+          opts.maxPrice = parseInt(lines[1]);
+        }
+        const priceMatch = message.match(/(?:under|below|max|budget|less than)\s*\$?\s*(\d+)/i);
+        if (priceMatch && !opts.maxPrice) opts.maxPrice = parseInt(priceMatch[1]);
+
+        console.log('Chat search query:', query, opts);
+        const result = await searchShopbop(query, 6, 0, opts);
+        products = result.products;
+      } catch (searchErr) {
+        console.error('Chat product search failed:', searchErr.message);
+      }
+    }
+
+    res.json({ reply, products });
+  } catch (err) {
+    console.error('Chat error:', err.message);
+    res.status(500).json({ error: err.message || 'Chat request failed' });
+  }
+});
+
+// ============================================================
 // GEMINI VIRTUAL TRY-ON ENDPOINTS
 // ============================================================
 
