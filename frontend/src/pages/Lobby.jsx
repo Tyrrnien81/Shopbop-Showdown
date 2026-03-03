@@ -296,7 +296,7 @@ function Lobby() {
           {players.map((player) => (
             <div key={player.playerId} className={`player-card ${player.isReady ? 'ready' : ''}`}>
               <div className="player-avatar" style={{
-                background: `linear-gradient(135deg, ${player.isHost ? 'var(--primary-orange)' : '#6B6B6B'}, ${player.isHost ? '#D4520A' : '#4A4A4A'})`,
+                background: `linear-gradient(135deg, ${player.isHost ? 'var(--primary-orange)' : '#6B6B6B'}, ${player.isHost ? '#DB3B14' : '#4A4A4A'})`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

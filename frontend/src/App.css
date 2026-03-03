@@ -1,21 +1,22 @@
 /* ShopBop Showdown - Figma-Matched Styles */
 
-/* CSS Variables */
+/* CSS Variables - Shopbop Brand Colors */
 :root {
-  --primary-orange: #E85D04;
-  --primary-orange-hover: #D4520A;
-  --bg-cream: #FAF9F6;
+  --primary-orange: #EE4A1B;
+  --primary-orange-hover: #DB3B14;
+  --disabled-orange: #E29D86;
+  --bg-cream: #F5F3EF;
   --bg-white: #FFFFFF;
-  --bg-dark: #1A1A1A;
+  --bg-dark: #000000;
   --bg-card: #FFFFFF;
-  --text-dark: #1A1A1A;
+  --text-dark: #000000;
   --text-muted: #6B6B6B;
   --text-light: #9A9A9A;
   --border-light: #E5E5E5;
   --border-medium: #D0D0D0;
   --star-gold: #FFB800;
-  --success: #22C55E;
-  --error: #EF4444;
+  --success: #0DB547;
+  --error: #DD0000;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
@@ -34,7 +35,7 @@
 
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: var(--bg-cream);
+  background: var(--bg-white);
   color: var(--text-dark);
   min-height: 100vh;
   line-height: 1.5;
@@ -98,7 +99,7 @@ h1, h2, h3, h4 {
 }
 
 .btn-primary:disabled {
-  background: var(--border-medium);
+  background: var(--disabled-orange);
   cursor: not-allowed;
   transform: none;
 }
@@ -2095,7 +2096,7 @@ input::placeholder {
 
 .podium-place.first .podium-bar {
   height: 120px;
-  background: linear-gradient(135deg, var(--primary-orange), #B8470A);
+  background: linear-gradient(135deg, var(--primary-orange), #DB3B14);
   color: white;
 }
 
