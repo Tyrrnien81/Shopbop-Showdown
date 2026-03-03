@@ -18,6 +18,9 @@ const useGameStore = create((set, get) => ({
   results: [],
   hasVoted: false,
 
+  // User Photo (base64 data URL for personalized try-on)
+  userPhoto: null,
+
   // Loading/Error States
   isLoading: false,
   error: null,
@@ -84,6 +87,9 @@ const useGameStore = create((set, get) => ({
 
   clearError: () => set({ error: null }),
 
+  // User Photo Actions
+  setUserPhoto: (userPhoto) => set({ userPhoto }),
+
   // Reset store
   resetGame: () => set({
     game: null,
@@ -91,6 +97,7 @@ const useGameStore = create((set, get) => ({
     currentPlayer: null,
     gameStatus: null,
     currentOutfit: { products: [], totalPrice: 0 },
+    userPhoto: null,
     outfits: [],
     results: [],
     hasVoted: false,

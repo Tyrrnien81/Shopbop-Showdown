@@ -582,17 +582,35 @@ app.get('/api/games/:gameId/results', (req, res) => {
 });
 
 // ============================================================
-// GEMINI VIRTUAL TRY-ON ENDPOINTS (unchanged)
+// GEMINI VIRTUAL TRY-ON ENDPOINTS
 // ============================================================
 
-async function generateSingleImage(products, productImages, variation = 0) {
+// Helper function to generate a single image
+async function generateSingleImage(products, productImages, variation = 0, userPhoto = null) {
   const variationPrompts = [
     'standing in a confident pose',
     'in a relaxed, natural pose',
     'walking forward with dynamic movement',
   ];
 
-  const prompt = `Look at these product images I'm providing. Generate a high-quality fashion photograph of a model wearing ALL of these EXACT items together as an outfit.
+  const hasUserPhoto = userPhoto && userPhoto.base64;
+
+  const prompt = hasUserPhoto
+    ? `Look at the reference photo of this person and the product images I'm providing. Generate a high-quality fashion photograph of a model who looks EXACTLY like the person in the reference photo, wearing ALL of these EXACT items together as an outfit.
+
+The items are:
+${products.map((p, i) => `${i + 1}. ${p.name} (${p.category}) by ${p.brand}`).join('\n')}
+
+CRITICAL REQUIREMENTS:
+- The model MUST closely resemble the person in the reference photo — match their face, skin tone, hair color, hair style, and body type
+- The model MUST wear items that match the EXACT colors, patterns, and styles shown in the product reference images
+- Combine all items into one cohesive outfit on the model
+- The model should be ${variationPrompts[variation % variationPrompts.length]}
+- Full-body shot, professional fashion photography style
+- Clean white or neutral studio background
+- All items must be clearly visible
+- Photorealistic, high resolution`
+    : `Look at these product images I'm providing. Generate a high-quality fashion photograph of a model wearing ALL of these EXACT items together as an outfit.
 
 The items are:
 ${products.map((p, i) => `${i + 1}. ${p.name} (${p.category}) by ${p.brand}`).join('\n')}
@@ -607,6 +625,17 @@ CRITICAL REQUIREMENTS:
 - Photorealistic, high resolution`;
 
   const parts = [{ text: prompt }];
+
+  // Add user photo first if provided
+  if (hasUserPhoto) {
+    parts.push({
+      inlineData: {
+        mimeType: userPhoto.mimeType || 'image/jpeg',
+        data: userPhoto.base64
+      }
+    });
+    parts.push({ text: '(Above: Reference photo of the person — the generated model should look like this person)' });
+  }
 
   if (productImages && productImages.length > 0) {
     for (let i = 0; i < productImages.length; i++) {
@@ -657,17 +686,31 @@ app.post('/api/tryon/generate', async (req, res) => {
   if (!GEMINI_API_KEY) return res.status(500).json({ error: 'API key not configured' });
 
   try {
-    const { products, productImages, count = 3 } = req.body;
-    if (!products || products.length === 0) return res.status(400).json({ error: 'No products provided' });
+    const { products, productImages, count = 3, userPhoto } = req.body;
 
-    const imageCount = Math.min(count, 3);
+    if (!products || products.length === 0) {
+      return res.status(400).json({ error: 'No products provided' });
+    }
+
+    const imageCount = Math.min(count, 3); // Max 3 images
+
+    // Parse user photo from data URL if provided
+    let parsedUserPhoto = null;
+    if (userPhoto) {
+      const match = userPhoto.match(/^data:(.+);base64,(.+)$/);
+      if (match) {
+        parsedUserPhoto = { mimeType: match[1], base64: match[2] };
+      }
+    }
+
+    // Generate images sequentially with delay to avoid rate limiting
     const images = [];
     const errors = [];
 
     for (let i = 0; i < imageCount; i++) {
       try {
         console.log(`Generating image ${i + 1} of ${imageCount}...`);
-        const result = await generateSingleImage(products, productImages, i);
+        const result = await generateSingleImage(products, productImages, i, parsedUserPhoto);
         images.push(result);
         if (i < imageCount - 1) {
           console.log('Waiting 2s before next request...');
@@ -694,11 +737,25 @@ app.post('/api/tryon/generate-single', async (req, res) => {
   if (!GEMINI_API_KEY) return res.status(500).json({ error: 'API key not configured' });
 
   try {
-    const { products, productImages, variation = 0 } = req.body;
-    if (!products || products.length === 0) return res.status(400).json({ error: 'No products provided' });
+    const { products, productImages, variation = 0, userPhoto } = req.body;
+
+    if (!products || products.length === 0) {
+      return res.status(400).json({ error: 'No products provided' });
+    }
+
+    // Parse user photo from data URL if provided
+    let parsedUserPhoto = null;
+    if (userPhoto) {
+      const match = userPhoto.match(/^data:(.+);base64,(.+)$/);
+      if (match) {
+        parsedUserPhoto = { mimeType: match[1], base64: match[2] };
+      }
+    }
 
     console.log(`Generating single image with variation ${variation}...`);
-    const result = await generateSingleImage(products, productImages, variation);
+    const result = await generateSingleImage(products, productImages, variation, parsedUserPhoto);
+    console.log('Single image generated successfully');
+
     return res.json(result);
 
   } catch (error) {

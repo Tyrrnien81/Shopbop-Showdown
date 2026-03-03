@@ -637,6 +637,95 @@ input::placeholder {
   font-weight: 700;
 }
 
+/* Photo Upload Section */
+.photo-upload-section {
+  width: 100%;
+  max-width: 900px;
+  margin-bottom: 32px;
+}
+
+.photo-upload-section h2 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.photo-upload-hint {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  margin-bottom: 16px;
+}
+
+.photo-upload-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 160px;
+  height: 180px;
+  background: var(--bg-white);
+  border: 2px dashed var(--border-medium);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+}
+
+.photo-upload-btn:hover {
+  border-color: var(--primary-orange);
+  color: var(--primary-orange);
+  background: #FFF5F0;
+}
+
+.photo-upload-btn span {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.photo-upload-optional {
+  font-size: 0.75rem !important;
+  font-weight: 400 !important;
+  color: var(--text-light);
+}
+
+.photo-preview {
+  position: relative;
+  width: 160px;
+}
+
+.photo-preview-img {
+  width: 160px;
+  height: 180px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 2px solid var(--primary-orange);
+}
+
+.photo-remove-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px;
+  background: none;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+}
+
+.photo-remove-btn:hover {
+  border-color: var(--error);
+  color: var(--error);
+}
+
 .players-section {
   width: 100%;
   max-width: 900px;
