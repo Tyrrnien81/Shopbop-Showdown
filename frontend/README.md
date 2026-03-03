@@ -1,16 +1,53 @@
-# React + Vite
+# ShopBop Showdown — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Real-time fashion game frontend built with React + Vite.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+| Tool | Version |
+|------|---------|
+| React | 19 |
+| Vite | 7 |
+| React Router DOM | 7 |
+| Zustand | 5 |
+| Axios | 1 |
+| Socket.IO Client | 4 |
 
-## React Compiler
+## Getting Started
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```bash
+npm install
+npm run dev       # http://localhost:5173
+npm run build
+npm run preview
+```
 
-## Expanding the ESLint configuration
+Set `VITE_API_BASE_URL` and `VITE_BACKEND_URL` in `.env` (default: `http://localhost:3000`).
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## File Structure
+
+```
+frontend/
+├── public/
+├── src/
+│   ├── pages/
+│   │   ├── Home.jsx        # Landing page
+│   │   ├── CreateGame.jsx  # Create a new game room
+│   │   ├── Lobby.jsx       # Pre-game waiting room (polls every 2.5s)
+│   │   ├── Game.jsx        # Outfit building (ShopBop products by category)
+│   │   ├── Voting.jsx      # Rate other players' outfits
+│   │   ├── Results.jsx     # Final scores and winner
+│   │   └── index.js        # Page exports
+│   ├── services/
+│   │   └── socket.js       # Socket.IO client setup
+│   ├── App.jsx             # Router + routes
+│   ├── main.jsx            # Entry point
+│   └── index.css           # Global styles
+├── eslint.config.js
+├── vite.config.js
+└── package.json
+```
+
+## Game Flow
+
+`Home → CreateGame / Join → Lobby → Game → Voting → Results`
