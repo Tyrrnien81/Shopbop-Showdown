@@ -37,6 +37,13 @@ const useGameStore = create((set, get) => ({
   // Outfit Actions
   addProductToOutfit: (product) => {
     const { currentOutfit, game } = get();
+
+    // Check item limit
+    if (currentOutfit.products.length >= 5) {
+      set({ error: 'You can only add up to 5 items!' });
+      return false;
+    }
+
     const newTotal = currentOutfit.totalPrice + product.price;
 
     // Check budget constraint

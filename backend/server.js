@@ -185,8 +185,12 @@ function normalizeProduct(item) {
 }
 
 // Search Shopbop and return normalized products
-async function searchShopbop(query, limit = 20, offset = 0) {
-  const data = await shopbopFetch('/public/search', { q: query, limit, offset });
+async function searchShopbop(query, limit = 20, offset = 0, { sort, minPrice, maxPrice } = {}) {
+  const params = { q: query, limit, offset };
+  if (sort) params.sort = sort;
+  if (minPrice) params.minPrice = minPrice;
+  if (maxPrice) params.maxPrice = maxPrice;
+  const data = await shopbopFetch('/public/search', params);
   const rawProducts = data.products || data.results || data.items || [];
   if (rawProducts.length > 0) {
     const normalized = normalizeProduct(rawProducts[0]);
@@ -221,17 +225,26 @@ app.get('/api/categories', (req, res) => {
 // GET /api/products/search
 app.get('/api/products/search', async (req, res) => {
   try {
-    const { query, category, minPrice, maxPrice, page = 1, limit = 20, theme } = req.query;
+    const { query, category, minPrice, maxPrice, page = 1, limit = 20, theme, sort, color } = req.query;
     const pageNum = parseInt(page);
     const limitNum = Math.min(parseInt(limit), 50);
     const offset = (pageNum - 1) * limitNum;
+
+    // Build options to forward to the Shopbop API
+    const opts = {};
+    if (sort) opts.sort = sort;
+    if (minPrice) opts.minPrice = minPrice;
+    if (maxPrice) opts.maxPrice = maxPrice;
+
+    // Color is prepended to the search query text (no native colors param)
+    const colorPrefix = color && color !== 'All' ? `${color} ` : '';
 
     let products = [];
     let total = 0;
 
     if (query) {
       // Direct text search
-      const result = await searchShopbop(query, limitNum, offset);
+      const result = await searchShopbop(`${colorPrefix}${query}`, limitNum, offset, opts);
       products = result.products;
       total = result.total;
 
@@ -242,7 +255,7 @@ app.get('/api/products/search', async (req, res) => {
       const perQueryLimit = Math.max(Math.ceil(limitNum / queries.length), 5);
 
       const fetches = queries.map(q =>
-        searchShopbop(q, perQueryLimit, offset)
+        searchShopbop(`${colorPrefix}${q}`, perQueryLimit, offset, opts)
           .then(r => r.products)
           .catch(() => [])
       );
@@ -263,7 +276,7 @@ app.get('/api/products/search', async (req, res) => {
       const perCategoryLimit = Math.ceil(limitNum / CATEGORIES.length);
 
       const fetches = CATEGORIES.map(cat =>
-        searchShopbop(`${themeQuery} ${cat.queries[0]}`, perCategoryLimit, 0)
+        searchShopbop(`${colorPrefix}${themeQuery} ${cat.queries[0]}`, perCategoryLimit, 0, opts)
           .then(r => r.products)
           .catch(() => [])
       );
@@ -273,14 +286,10 @@ app.get('/api/products/search', async (req, res) => {
 
     } else {
       // General fashion search fallback
-      const result = await searchShopbop('fashion', limitNum, offset);
+      const result = await searchShopbop(`${colorPrefix}fashion`, limitNum, offset, opts);
       products = result.products;
       total = result.total;
     }
-
-    // Apply price range filters
-    if (minPrice) products = products.filter(p => p.price >= parseFloat(minPrice));
-    if (maxPrice) products = products.filter(p => p.price <= parseFloat(maxPrice));
 
     res.json({
       products,

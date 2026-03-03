@@ -898,6 +898,134 @@ input::placeholder {
   font-size: 0.9rem;
 }
 
+/* ---- Filter Bar ---- */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.filter-bar label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-light);
+  margin-bottom: 2px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.filter-select {
+  padding: 5px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-white);
+  font-size: 0.8rem;
+  color: var(--text-dark);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.filter-select:focus {
+  border-color: var(--primary-orange);
+}
+
+.color-swatches {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border-light);
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+  position: relative;
+}
+
+.color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.color-swatch.active {
+  border-color: var(--primary-orange);
+  box-shadow: 0 0 0 2px var(--primary-orange);
+}
+
+.price-range {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.price-input {
+  width: 70px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: var(--text-dark);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.price-input:focus {
+  border-color: var(--primary-orange);
+}
+
+.price-input::placeholder {
+  color: var(--text-light);
+}
+
+.price-range .separator {
+  color: var(--text-light);
+  font-size: 0.8rem;
+}
+
+.btn-apply-price {
+  padding: 5px 12px;
+  background: var(--primary-orange);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-apply-price:hover {
+  background: var(--primary-orange-hover);
+}
+
+@media (max-width: 768px) {
+  .filter-bar {
+    gap: 10px;
+  }
+  .price-input {
+    width: 56px;
+  }
+  .color-swatch {
+    width: 20px;
+    height: 20px;
+  }
+}
+
 .products-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -1234,29 +1362,6 @@ input::placeholder {
 
 .selected-item-remove:hover {
   background: var(--error);
-}
-
-/* Outfit Requirements Checklist */
-.outfit-requirements {
-  padding: 16px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.requirement {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: rgba(255, 255, 255, 0.4);
-  transition: color 0.2s ease;
-  padding: 4px 0;
-}
-
-.requirement.met {
-  color: var(--success);
 }
 
 /* Outfit Items Grid - More Spacious */

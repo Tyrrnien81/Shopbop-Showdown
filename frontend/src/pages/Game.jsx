@@ -4,6 +4,31 @@ import { generateTryOnImage, generateSingleTryOnImage } from '../services/gemini
 import { productApi, outfitApi } from '../services/api';
 import useGameStore from '../store/gameStore';
 
+// Sort options supported by the Shopbop API
+const SORT_OPTIONS = [
+  { value: '', label: 'Default' },
+  { value: 'price_low_to_high', label: 'Price: Low → High' },
+  { value: 'price_high_to_low', label: 'Price: High → Low' },
+  { value: 'editors_pick', label: "Editor's Pick" },
+  { value: 'most_loved', label: 'Most Loved' },
+  { value: 'top_rated', label: 'Top Rated' },
+];
+
+// Color options with hex values for swatches
+const COLOR_OPTIONS = [
+  { value: 'All', label: 'All', hex: null },
+  { value: 'Black', label: 'Black', hex: '#000000' },
+  { value: 'White', label: 'White', hex: '#FFFFFF' },
+  { value: 'Red', label: 'Red', hex: '#CC0000' },
+  { value: 'Blue', label: 'Blue', hex: '#2255CC' },
+  { value: 'Green', label: 'Green', hex: '#228833' },
+  { value: 'Pink', label: 'Pink', hex: '#E891B2' },
+  { value: 'Beige', label: 'Beige', hex: '#D4B896' },
+  { value: 'Brown', label: 'Brown', hex: '#7B4B2A' },
+  { value: 'Navy', label: 'Navy', hex: '#1B2A4A' },
+  { value: 'Gray', label: 'Gray', hex: '#999999' },
+];
+
 // Outfit validation rules - Dresses are mutually exclusive with Tops/Bottoms
 const MUTUALLY_EXCLUSIVE = [
   ['Dresses', 'Tops'],
@@ -31,6 +56,14 @@ function Game() {
   const [selectedProducts, setSelectedProducts] = useState(new Set());
   const [validationErrors, setValidationErrors] = useState([]);
 
+  // Filter state
+  const [sortBy, setSortBy] = useState('');
+  const [selectedColor, setSelectedColor] = useState('All');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [appliedMinPrice, setAppliedMinPrice] = useState('');
+  const [appliedMaxPrice, setAppliedMaxPrice] = useState('');
+
   // Virtual try-on modal state
   const [showModal, setShowModal] = useState(false);
   const [generatedImages, setGeneratedImages] = useState([null, null, null]); // 3 slots
@@ -42,33 +75,57 @@ function Game() {
   const budget = game?.budget || 5000;
   const theme = game?.theme || 'Runway Ready';
 
-  // Load products from ShopBop catalog on mount
+  const handleApplyPrice = () => {
+    setAppliedMinPrice(minPrice);
+    setAppliedMaxPrice(maxPrice);
+  };
+
+  // Load products from ShopBop catalog (re-fetches when filters change)
   useEffect(() => {
+    let stale = false;
     const CATEGORIES_TO_FETCH = ['Dresses', 'Tops', 'Bottoms', 'Shoes', 'Jewelry', 'Outerwear', 'Accessories'];
 
     const fetchProducts = async () => {
       setLoadingProducts(true);
       try {
-        // Fetch 4-5 items per category in parallel for variety
+        const filterParams = { limit: 5, theme };
+        if (sortBy) filterParams.sort = sortBy;
+        if (selectedColor && selectedColor !== 'All') filterParams.color = selectedColor;
+        if (appliedMinPrice) filterParams.minPrice = appliedMinPrice;
+        if (appliedMaxPrice) filterParams.maxPrice = appliedMaxPrice;
+
+        // Fetch items per category in parallel
         const results = await Promise.all(
           CATEGORIES_TO_FETCH.map(cat =>
-            productApi.searchProducts({ category: cat, limit: 5, theme })
+            productApi.searchProducts({ ...filterParams, category: cat })
               .then(r => r.data.products || [])
               .catch(() => [])
           )
         );
-        const all = results.flat().filter(p => p.productSin && p.name && p.imageUrl);
+        if (stale) return; // discard results if a newer fetch has started
+
+        // Deduplicate by productSin across categories
+        const seen = new Set();
+        const all = results.flat()
+          .filter(p => p.productSin && p.name && p.imageUrl)
+          .filter(p => {
+            if (seen.has(p.productSin)) return false;
+            seen.add(p.productSin);
+            return true;
+          });
         setProducts(all);
       } catch (err) {
+        if (stale) return;
         console.error('Failed to load products:', err);
         setError('Could not load products from ShopBop');
       } finally {
-        setLoadingProducts(false);
+        if (!stale) setLoadingProducts(false);
       }
     };
 
     fetchProducts();
-  }, [theme]);
+    return () => { stale = true; };
+  }, [theme, sortBy, appliedMinPrice, appliedMaxPrice, selectedColor]);
 
   // Get categories in current outfit
   const getOutfitCategories = useCallback(() => {
@@ -356,6 +413,64 @@ function Game() {
             ))}
           </div>
 
+          {/* Filter bar: Sort, Color, Price */}
+          <div className="filter-bar">
+            <div className="filter-group">
+              <label>Sort</label>
+              <select
+                className="filter-select"
+                value={sortBy}
+                onChange={e => setSortBy(e.target.value)}
+              >
+                {SORT_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="filter-group">
+              <label>Color</label>
+              <div className="color-swatches">
+                {COLOR_OPTIONS.map(c => (
+                  <button
+                    key={c.value}
+                    className={`color-swatch${selectedColor === c.value ? ' active' : ''}`}
+                    style={{
+                      background: c.hex || 'linear-gradient(135deg, #f00, #0f0, #00f)',
+                      ...(c.value === 'White' ? { border: '2px solid #ccc' } : {}),
+                    }}
+                    title={c.label}
+                    onClick={() => setSelectedColor(c.value)}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="filter-group">
+              <label>Price Range</label>
+              <div className="price-range">
+                <input
+                  type="number"
+                  className="price-input"
+                  placeholder="Min"
+                  value={minPrice}
+                  onChange={e => setMinPrice(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleApplyPrice()}
+                />
+                <span className="separator">–</span>
+                <input
+                  type="number"
+                  className="price-input"
+                  placeholder="Max"
+                  value={maxPrice}
+                  onChange={e => setMaxPrice(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleApplyPrice()}
+                />
+                <button className="btn-apply-price" onClick={handleApplyPrice}>Go</button>
+              </div>
+            </div>
+          </div>
+
           {error && <div className="error-message">{error}</div>}
 
           {loadingProducts ? (
@@ -401,19 +516,6 @@ function Game() {
             <span className="outfit-panel-subtitle">Your Curated Look</span>
           </div>
 
-          {/* Outfit Requirements Checklist */}
-          <div className="outfit-requirements">
-            <div className={`requirement ${getOutfitCategories().has('Dresses') || (getOutfitCategories().has('Tops') && getOutfitCategories().has('Bottoms')) ? 'met' : ''}`}>
-              {getOutfitCategories().has('Dresses') ? '✓ Dress' : getOutfitCategories().has('Tops') && getOutfitCategories().has('Bottoms') ? '✓ Top + Bottoms' : '○ Dress OR Top + Bottoms'}
-            </div>
-            <div className={`requirement ${getOutfitCategories().has('Shoes') ? 'met' : ''}`}>
-              {getOutfitCategories().has('Shoes') ? '✓ Shoes' : '○ Shoes'}
-            </div>
-            <div className={`requirement ${getOutfitCategories().has('Jewelry') ? 'met' : ''}`}>
-              {getOutfitCategories().has('Jewelry') ? '✓ Jewelry' : '○ Jewelry'}
-            </div>
-          </div>
-
           {/* Pinterest-style outfit board */}
           <div className="outfit-items">
             <div className="outfit-items-grid">
@@ -433,7 +535,7 @@ function Game() {
                 </div>
               ))}
               {/* Empty slots */}
-              {[...Array(Math.max(0, 4 - currentOutfit.products.length))].map((_, i) => (
+              {[...Array(Math.max(0, 5 - currentOutfit.products.length))].map((_, i) => (
                 <div key={`empty-${i}`} className="outfit-item outfit-empty-slot">
                   +
                 </div>
