@@ -64,10 +64,12 @@ function Voting() {
   const fetchOutfits = async () => {
     setLoading(true);
     try {
-      // Mock outfits for development
+      const response = await outfitApi.getOutfits(gameId);
+      const fetched = response.data.outfits || [];
+      setOutfits(fetched.length > 0 ? fetched : mockOutfits);
+    } catch {
+      // Fall back to mock data if API unavailable
       setOutfits(mockOutfits);
-    } catch (error) {
-      setError('Failed to load outfits');
     } finally {
       setLoading(false);
     }
@@ -105,14 +107,34 @@ function Voting() {
 
     setLoading(true);
     try {
-      console.log('Submitting votes:', ratings);
-      setHasVoted(true);
+      const { currentPlayer } = useGameStore.getState();
+      const ratingsArray = Object.entries(ratings).map(([outfitId, rating]) => ({ outfitId, rating }));
 
-      // Simulate waiting for all votes
-      setTimeout(() => {
-        setVotingComplete(true);
-      }, 2000);
-    } catch (error) {
+      if (currentPlayer?.playerId) {
+        const response = await voteApi.castVote({ gameId, playerId: currentPlayer.playerId, ratings: ratingsArray });
+        const { votesRemaining } = response.data;
+        setHasVoted(true);
+        if (votesRemaining === 0) {
+          setVotingComplete(true);
+        } else {
+          // Poll until all votes are in
+          const poll = setInterval(async () => {
+            try {
+              const gameResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'}/games/${gameId}`);
+              const gameData = await gameResponse.json();
+              if (gameData.status === 'COMPLETED') {
+                clearInterval(poll);
+                setVotingComplete(true);
+              }
+            } catch { /* ignore */ }
+          }, 2000);
+        }
+      } else {
+        // Dev fallback (no player ID)
+        setHasVoted(true);
+        setTimeout(() => setVotingComplete(true), 2000);
+      }
+    } catch {
       setError('Failed to submit votes');
     } finally {
       setLoading(false);

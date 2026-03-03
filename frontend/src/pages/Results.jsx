@@ -48,7 +48,7 @@ const mockResults = [
 function Results() {
   const { gameId } = useParams();
   const navigate = useNavigate();
-  const { results, setResults, setLoading, setError, resetGame } = useGameStore();
+  const { results, setResults, resetGame } = useGameStore();
   const [isLoading, setIsLoadingLocal] = useState(true);
 
   useEffect(() => {
@@ -58,10 +58,12 @@ function Results() {
   const fetchResults = async () => {
     setIsLoadingLocal(true);
     try {
-      // Mock results for development
+      const response = await voteApi.getResults(gameId);
+      const fetched = response.data.results || [];
+      setResults(fetched.length > 0 ? fetched : mockResults);
+    } catch {
+      // Fall back to mock data if API unavailable
       setResults(mockResults);
-    } catch (error) {
-      setError('Failed to load results');
     } finally {
       setIsLoadingLocal(false);
     }

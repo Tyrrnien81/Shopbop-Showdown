@@ -1,29 +1,596 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const crypto = require('crypto');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '50mb' })); // Large limit for base64 images
+app.use(express.json({ limit: '50mb' }));
 
-// Gemini API configuration (kept secret on server)
+// ============================================================
+// CONFIGURATION
+// ============================================================
+
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent';
 
-// Health check
+const SHOPBOP_API_BASE = 'https://api.shopbop.com';
+// Client-ID provided by Shopbop for UW Capstone - can be overridden via env
+const SHOPBOP_CLIENT_ID = process.env.SHOPBOP_CLIENT_ID || 'Shopbop-UW-Team1-2024';
+
+// ============================================================
+// IN-MEMORY DATA STORES
+// ============================================================
+
+const games = new Map();
+const players = new Map();
+const outfits = new Map();
+const votes = new Map();
+
+// ============================================================
+// UTILITY FUNCTIONS
+// ============================================================
+
+function generateGameId() {
+  // 6-char alphanumeric code, avoiding confusing chars
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let id;
+  do {
+    id = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  } while (games.has(id));
+  return id;
+}
+
+function generateId() {
+  return crypto.randomUUID();
+}
+
+const THEME_NAMES = {
+  runway: 'Runway Ready',
+  trend: '2026 Trend Watch',
+  ski: 'Apres Ski Chic',
+  street: 'Streetwear Icon',
+  gala: 'Met Gala: Camp',
+  beach: 'Beach Vacation',
+};
+
+const THEME_QUERIES = {
+  runway: 'evening gown dress formal',
+  trend: 'trendy fashion new',
+  ski: 'ski jacket winter',
+  street: 'streetwear casual urban',
+  gala: 'formal gown sequin glam',
+  beach: 'swimwear resort beach dress',
+};
+
+// Category ID → display name mapping
+const CATEGORIES = [
+  { id: 'dresses', name: 'Dresses', query: 'dress' },
+  { id: 'tops', name: 'Tops', query: 'top blouse shirt sweater' },
+  { id: 'bottoms', name: 'Bottoms', query: 'pants jeans skirt trouser' },
+  { id: 'shoes', name: 'Shoes', query: 'shoes heels boots sandals' },
+  { id: 'jewelry', name: 'Jewelry', query: 'jewelry necklace earrings' },
+  { id: 'outerwear', name: 'Outerwear', query: 'jacket coat blazer' },
+  { id: 'accessories', name: 'Accessories', query: 'bag purse accessory' },
+];
+
+// ============================================================
+// SHOPBOP API PROXY HELPERS
+// ============================================================
+
+async function shopbopFetch(path, params = {}) {
+  const url = new URL(`${SHOPBOP_API_BASE}${path}`);
+  Object.entries(params).forEach(([k, v]) => {
+    if (v != null && v !== '') url.searchParams.set(k, String(v));
+  });
+  console.log('Shopbop URL:', url.toString());
+
+  const headers = { 'client-id': SHOPBOP_CLIENT_ID };
+  if (process.env.SHOPBOP_API_KEY) {
+    headers['x-api-key'] = process.env.SHOPBOP_API_KEY;
+  }
+
+  const res = await fetch(url.toString(), { headers });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Shopbop API ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+// Normalize image URL — Shopbop may return relative paths
+function normalizeImageUrl(src) {
+  if (!src || typeof src !== 'string') return '';
+  if (src.startsWith('http')) return src;
+  if (src.startsWith('//')) return `https:${src}`;
+  // Relative path — prepend Shopbop CDN (base ends with /p/)
+  return `https://m.media-amazon.com/images/G/01/Shopbop/p/${src.replace(/^\//, '')}`;
+}
+
+// Guess normalized category from raw strings
+function guessCategory(rawCategory = '', productName = '') {
+  const text = `${rawCategory} ${productName}`.toLowerCase();
+  if (text.includes('dress') && !text.includes('underdress')) return 'Dresses';
+  if (text.includes('top') || text.includes('shirt') || text.includes('blouse') ||
+      text.includes('sweater') || text.includes('tank') || text.includes('tee') ||
+      text.includes('bodysuit') || text.includes('pullover') || text.includes('cardigan')) return 'Tops';
+  if (text.includes('pant') || text.includes('jean') || text.includes('skirt') ||
+      text.includes('short') || text.includes('trouser') || text.includes('legging') ||
+      text.includes('denim') || text.includes('culotte')) return 'Bottoms';
+  if (text.includes('shoe') || text.includes('heel') || text.includes('boot') ||
+      text.includes('sandal') || text.includes('sneaker') || text.includes('flat') ||
+      text.includes('pump') || text.includes('loafer') || text.includes('mule') ||
+      text.includes('wedge') || text.includes('oxford') || text.includes('slingback')) return 'Shoes';
+  if (text.includes('jewel') || text.includes('necklace') || text.includes('earring') ||
+      text.includes('ring') || text.includes('bracelet') || text.includes('pendant') ||
+      text.includes('choker') || text.includes('cuff') || text.includes('stud')) return 'Jewelry';
+  if (text.includes('coat') || text.includes('jacket') || text.includes('blazer') ||
+      text.includes('parka') || text.includes('vest') || text.includes('outerwear') ||
+      text.includes('trench') || text.includes('puffer') || text.includes('windbreaker')) return 'Outerwear';
+  if (text.includes('bag') || text.includes('tote') || text.includes('purse') ||
+      text.includes('clutch') || text.includes('crossbody') || text.includes('wallet') ||
+      text.includes('belt') || text.includes('scarf') || text.includes('hat') ||
+      text.includes('sunglasses') || text.includes('accessory') || text.includes('accessories')) return 'Accessories';
+  return rawCategory || 'Other';
+}
+
+// Normalize a Shopbop product to our format
+function normalizeProduct(item) {
+  // Shopbop API returns different shapes — handle both nested and flat
+  const p = item.product || item;
+  const priceInfo = item.priceInfo || p.priceInfo || {};
+  const colors = item.colors || p.colors || [];
+  const imageInfo = item.imageInfo || p.imageInfo;
+
+  // Price — Shopbop: product.retailPrice.usdPrice
+  const rawPrice = p.retailPrice?.usdPrice ?? p.retailPrice?.price
+    ?? priceInfo.retailPrice ?? priceInfo.salePrice ?? priceInfo.price ?? p.price ?? 0;
+  const price = typeof rawPrice === 'string' ? parseFloat(rawPrice.replace(/[^0-9.]/g, '')) : (rawPrice || 0);
+
+  // Images — Shopbop: colors[0].images[0].src is a relative path like /prod/products/...
+  const firstColor = colors[0] || {};
+  const images = firstColor.images || imageInfo?.images || p.images || [];
+  const rawSrc = images[0]?.src || images[0]?.url || '';
+  const imageUrl = normalizeImageUrl(rawSrc);
+
+  // Identity
+  const productSin = p.productSin || p.asin || p.sin || p.id || '';
+  const name = p.shortDescription || p.productName || p.name || '';
+  const brand = p.designerName || p.brandName || p.brand || '';
+  const rawCategory = p.categoryName || p.category || p.department || p.productType || '';
+  const category = guessCategory(rawCategory, name);
+
+  return {
+    productSin,
+    name,
+    brand,
+    category,
+    price,
+    imageUrl,
+    productUrl: `https://www.shopbop.com/dp/${productSin}`,
+  };
+}
+
+// Search Shopbop and return normalized products
+async function searchShopbop(query, limit = 20, offset = 0) {
+  const data = await shopbopFetch('/public/search', { q: query, limit, offset });
+  const rawProducts = data.products || data.results || data.items || [];
+  if (rawProducts.length > 0) {
+    const normalized = normalizeProduct(rawProducts[0]);
+    console.log('Normalized imageUrl:', normalized.imageUrl);
+    console.log('Normalized price:', normalized.price);
+  }
+  return {
+    products: rawProducts.map(normalizeProduct).filter(p => p.productSin && p.name),
+    total: data.metadata?.totalCount || data.total || rawProducts.length,
+  };
+}
+
+// ============================================================
+// HEALTH CHECK
+// ============================================================
+
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', port: PORT });
 });
+
+// ============================================================
+// SHOPBOP PRODUCT ENDPOINTS
+// ============================================================
+
+// GET /api/categories — static category list
+app.get('/api/categories', (req, res) => {
+  res.json({
+    categories: CATEGORIES.map(({ id, name }) => ({ id, name })),
+  });
+});
+
+// GET /api/products/search
+app.get('/api/products/search', async (req, res) => {
+  try {
+    const { query, category, minPrice, maxPrice, page = 1, limit = 20, theme } = req.query;
+    const pageNum = parseInt(page);
+    const limitNum = Math.min(parseInt(limit), 50);
+    const offset = (pageNum - 1) * limitNum;
+
+    let products = [];
+    let total = 0;
+
+    if (query) {
+      // Direct text search
+      const result = await searchShopbop(query, limitNum, offset);
+      products = result.products;
+      total = result.total;
+
+    } else if (category) {
+      // Category-specific search
+      const cat = CATEGORIES.find(c => c.id === category.toLowerCase() || c.name.toLowerCase() === category.toLowerCase());
+      const q = cat ? cat.query : category;
+      const result = await searchShopbop(q, limitNum, offset);
+      products = result.products;
+      total = result.total;
+
+    } else if (theme) {
+      // Theme-based search: fetch from a few categories in parallel for variety
+      const themeQuery = THEME_QUERIES[theme] || 'fashion';
+      const perCategoryLimit = Math.ceil(limitNum / CATEGORIES.length);
+
+      const fetches = CATEGORIES.map(cat =>
+        searchShopbop(`${themeQuery} ${cat.query}`, perCategoryLimit, 0)
+          .then(r => r.products)
+          .catch(() => [])
+      );
+      const results = await Promise.all(fetches);
+      products = results.flat();
+      total = products.length;
+
+    } else {
+      // General fashion search fallback
+      const result = await searchShopbop('fashion', limitNum, offset);
+      products = result.products;
+      total = result.total;
+    }
+
+    // Apply category filter if specified (post-fetch)
+    if (category) {
+      const catName = CATEGORIES.find(c =>
+        c.id === category.toLowerCase() || c.name.toLowerCase() === category.toLowerCase()
+      )?.name || category;
+      products = products.filter(p =>
+        p.category.toLowerCase() === catName.toLowerCase() ||
+        p.category === catName
+      );
+    }
+
+    // Apply price range filters
+    if (minPrice) products = products.filter(p => p.price >= parseFloat(minPrice));
+    if (maxPrice) products = products.filter(p => p.price <= parseFloat(maxPrice));
+
+    res.json({
+      products,
+      total: total || products.length,
+      page: pageNum,
+      totalPages: Math.ceil((total || products.length) / limitNum),
+    });
+
+  } catch (err) {
+    console.error('Product search error:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to search products' });
+  }
+});
+
+// GET /api/products/:productSin — product detail
+app.get('/api/products/:productSin', async (req, res) => {
+  try {
+    const data = await shopbopFetch(`/public/products/${req.params.productSin}`);
+    res.json(normalizeProduct(data));
+  } catch (err) {
+    console.error('Product detail error:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to get product' });
+  }
+});
+
+// ============================================================
+// GAME MANAGEMENT ENDPOINTS
+// ============================================================
+
+// POST /api/games — create a new game
+app.post('/api/games', (req, res) => {
+  const { hostUsername, theme, budget, maxPlayers, timeLimit } = req.body;
+
+  if (!hostUsername || !theme) {
+    return res.status(400).json({ error: 'hostUsername and theme are required' });
+  }
+
+  const gameId = generateGameId();
+  const playerId = generateId();
+  const now = new Date().toISOString();
+
+  const player = {
+    playerId,
+    username: hostUsername,
+    isHost: true,
+    isReady: true,
+    hasSubmitted: false,
+    hasVoted: false,
+    gameId,
+    outfitId: null,
+  };
+
+  const game = {
+    gameId,
+    theme,
+    themeName: THEME_NAMES[theme] || theme,
+    budget: budget || 5000,
+    maxPlayers: maxPlayers || 4,
+    timeLimit: timeLimit || 300,
+    status: 'LOBBY',
+    hostPlayerId: playerId,
+    playerIds: [playerId],
+    createdAt: now,
+    startedAt: null,
+    endsAt: null,
+    endedAt: null,
+  };
+
+  games.set(gameId, game);
+  players.set(playerId, player);
+
+  console.log(`Game created: ${gameId} by ${hostUsername}`);
+  res.status(201).json({ game, player });
+});
+
+// GET /api/games/:gameId — get game details
+app.get('/api/games/:gameId', (req, res) => {
+  const game = games.get(req.params.gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+
+  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
+  res.json({ ...game, players: gamePlayers });
+});
+
+// POST /api/games/:gameId/join — join existing game
+app.post('/api/games/:gameId/join', (req, res) => {
+  const game = games.get(req.params.gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+  if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game has already started' });
+  if (game.playerIds.length >= game.maxPlayers) return res.status(400).json({ error: 'Game is full' });
+
+  const { username } = req.body;
+  if (!username) return res.status(400).json({ error: 'username is required' });
+
+  const playerId = generateId();
+  const player = {
+    playerId,
+    username,
+    isHost: false,
+    isReady: false,
+    hasSubmitted: false,
+    hasVoted: false,
+    gameId: game.gameId,
+    outfitId: null,
+  };
+
+  game.playerIds.push(playerId);
+  players.set(playerId, player);
+
+  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
+  console.log(`${username} joined game ${game.gameId}`);
+  res.json({ player, game: { ...game, players: gamePlayers } });
+});
+
+// POST /api/games/:gameId/ready — toggle ready status
+app.post('/api/games/:gameId/ready', (req, res) => {
+  const game = games.get(req.params.gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+
+  const { playerId, isReady } = req.body;
+  const player = players.get(playerId);
+  if (!player || player.gameId !== game.gameId) return res.status(404).json({ error: 'Player not found in this game' });
+
+  player.isReady = Boolean(isReady);
+  res.json({ success: true, player });
+});
+
+// POST /api/games/:gameId/start — start the game (host only)
+app.post('/api/games/:gameId/start', (req, res) => {
+  const game = games.get(req.params.gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+  if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game already started' });
+
+  const now = new Date();
+  game.status = 'PLAYING';
+  game.startedAt = now.toISOString();
+  game.endsAt = new Date(now.getTime() + game.timeLimit * 1000).toISOString();
+
+  console.log(`Game ${game.gameId} started`);
+  res.json({ success: true, game });
+});
+
+// GET /api/games/:gameId/players — list players
+app.get('/api/games/:gameId/players', (req, res) => {
+  const game = games.get(req.params.gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+
+  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
+  res.json({ players: gamePlayers });
+});
+
+// ============================================================
+// OUTFIT ENDPOINTS
+// ============================================================
+
+// POST /api/outfits — submit outfit
+app.post('/api/outfits', (req, res) => {
+  const { gameId, playerId, products: outfitProducts, totalPrice } = req.body;
+
+  const game = games.get(gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+
+  const player = players.get(playerId);
+  if (!player || player.gameId !== gameId) return res.status(404).json({ error: 'Player not found in this game' });
+  if (player.hasSubmitted) return res.status(400).json({ error: 'Outfit already submitted' });
+
+  const outfitId = generateId();
+  const outfit = {
+    outfitId,
+    gameId,
+    playerId,
+    products: outfitProducts || [],
+    totalPrice: totalPrice || 0,
+    submittedAt: new Date().toISOString(),
+  };
+
+  outfits.set(outfitId, outfit);
+  player.hasSubmitted = true;
+  player.outfitId = outfitId;
+
+  // Auto-advance to VOTING if all players submitted
+  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
+  if (gamePlayers.every(p => p.hasSubmitted)) {
+    game.status = 'VOTING';
+    console.log(`Game ${gameId} moved to VOTING phase`);
+  }
+
+  console.log(`Outfit ${outfitId} submitted by player ${playerId}`);
+  res.status(201).json({ outfitId, submittedAt: outfit.submittedAt });
+});
+
+// GET /api/games/:gameId/outfits — get outfits (anonymized during voting)
+app.get('/api/games/:gameId/outfits', (req, res) => {
+  const game = games.get(req.params.gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+
+  const gameOutfits = [];
+  for (const outfit of outfits.values()) {
+    if (outfit.gameId !== req.params.gameId) continue;
+
+    if (game.status === 'VOTING') {
+      // Anonymized — no player info
+      gameOutfits.push({
+        outfitId: outfit.outfitId,
+        products: outfit.products,
+        totalPrice: outfit.totalPrice,
+      });
+    } else {
+      // Include player info for completed games
+      const player = players.get(outfit.playerId);
+      gameOutfits.push({
+        outfitId: outfit.outfitId,
+        playerId: outfit.playerId,
+        playerName: player?.username,
+        products: outfit.products,
+        totalPrice: outfit.totalPrice,
+      });
+    }
+  }
+
+  res.json({ outfits: gameOutfits });
+});
+
+// ============================================================
+// VOTING ENDPOINTS
+// ============================================================
+
+// POST /api/votes — submit votes
+app.post('/api/votes', (req, res) => {
+  const { gameId, playerId, ratings } = req.body;
+
+  const game = games.get(gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+
+  const player = players.get(playerId);
+  if (!player || player.gameId !== gameId) return res.status(404).json({ error: 'Player not found in this game' });
+  if (player.hasVoted) return res.status(400).json({ error: 'Already voted' });
+  if (!Array.isArray(ratings) || ratings.length === 0) return res.status(400).json({ error: 'ratings array is required' });
+
+  for (const { outfitId, rating } of ratings) {
+    const voteId = generateId();
+    votes.set(voteId, { voteId, gameId, voterId: playerId, outfitId, rating: Number(rating) });
+  }
+
+  player.hasVoted = true;
+
+  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
+  const votesRemaining = gamePlayers.filter(p => !p.hasVoted).length;
+
+  if (votesRemaining === 0) {
+    game.status = 'COMPLETED';
+    game.endedAt = new Date().toISOString();
+    console.log(`Game ${gameId} completed`);
+  }
+
+  res.json({ success: true, votesRemaining });
+});
+
+// GET /api/games/:gameId/results — get final results
+app.get('/api/games/:gameId/results', (req, res) => {
+  const game = games.get(req.params.gameId);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+
+  // Collect outfits for this game
+  const gameOutfits = [];
+  for (const outfit of outfits.values()) {
+    if (outfit.gameId === req.params.gameId) gameOutfits.push(outfit);
+  }
+
+  // Aggregate vote scores per outfit
+  const scoreMap = new Map(); // outfitId → { total, count }
+  for (const vote of votes.values()) {
+    if (vote.gameId !== req.params.gameId) continue;
+    const entry = scoreMap.get(vote.outfitId) || { total: 0, count: 0 };
+    entry.total += vote.rating;
+    entry.count += 1;
+    scoreMap.set(vote.outfitId, entry);
+  }
+
+  // Build ranked results
+  const results = gameOutfits.map(outfit => {
+    const player = players.get(outfit.playerId);
+    const { total = 0, count = 0 } = scoreMap.get(outfit.outfitId) || {};
+    const score = count > 0 ? total / count : 0;
+    return {
+      outfitId: outfit.outfitId,
+      playerId: outfit.playerId,
+      username: player?.username || 'Unknown',
+      score: parseFloat(score.toFixed(1)),
+      totalVotes: count,
+      products: outfit.products,
+      totalPrice: outfit.totalPrice,
+    };
+  });
+
+  results.sort((a, b) => b.score - a.score || b.totalVotes - a.totalVotes);
+  results.forEach((r, i) => { r.rank = i + 1; });
+
+  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
+  const gameVotes = [...votes.values()].filter(v => v.gameId === req.params.gameId);
+
+  res.json({
+    results,
+    gameStats: {
+      totalPlayers: gamePlayers.length,
+      totalVotes: gameVotes.length,
+      avgBudgetUsed: results.length > 0
+        ? Math.round(results.reduce((s, r) => s + r.totalPrice, 0) / results.length)
+        : 0,
+    },
+  });
+});
+
+// ============================================================
+// GEMINI VIRTUAL TRY-ON ENDPOINTS
+// ============================================================
 
 // Helper function to generate a single image
 async function generateSingleImage(products, productImages, variation = 0, userPhoto = null) {
   const variationPrompts = [
     'standing in a confident pose',
     'in a relaxed, natural pose',
-    'walking forward with dynamic movement'
+    'walking forward with dynamic movement',
   ];
 
   const hasUserPhoto = userPhoto && userPhoto.base64;
@@ -77,8 +644,8 @@ CRITICAL REQUIREMENTS:
         parts.push({
           inlineData: {
             mimeType: img.mimeType || 'image/jpeg',
-            data: img.base64
-          }
+            data: img.base64,
+          },
         });
         parts.push({ text: `(Above: ${products[i]?.name || 'Item'} - ${products[i]?.category || 'Fashion'})` });
       }
@@ -87,15 +654,13 @@ CRITICAL REQUIREMENTS:
 
   const requestBody = {
     contents: [{ parts }],
-    generationConfig: {
-      responseModalities: ['TEXT', 'IMAGE']
-    }
+    generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
   };
 
   const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody)
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -104,30 +669,21 @@ CRITICAL REQUIREMENTS:
   }
 
   const data = await response.json();
-  const candidates = data.candidates;
-
-  if (candidates && candidates[0]?.content?.parts) {
-    for (const part of candidates[0].content.parts) {
+  if (data.candidates?.[0]?.content?.parts) {
+    for (const part of data.candidates[0].content.parts) {
       if (part.inlineData) {
-        return {
-          imageData: part.inlineData.data,
-          mimeType: part.inlineData.mimeType || 'image/png'
-        };
+        return { imageData: part.inlineData.data, mimeType: part.inlineData.mimeType || 'image/png' };
       }
     }
   }
-
   throw new Error('No image in response');
 }
 
-// Helper function to delay execution
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Proxy endpoint for Gemini virtual try-on (generates 3 images)
+// POST /api/tryon/generate — generate 3 try-on images
 app.post('/api/tryon/generate', async (req, res) => {
-  if (!GEMINI_API_KEY) {
-    return res.status(500).json({ error: 'API key not configured' });
-  }
+  if (!GEMINI_API_KEY) return res.status(500).json({ error: 'API key not configured' });
 
   try {
     const { products, productImages, count = 3, userPhoto } = req.body;
@@ -156,27 +712,18 @@ app.post('/api/tryon/generate', async (req, res) => {
         console.log(`Generating image ${i + 1} of ${imageCount}...`);
         const result = await generateSingleImage(products, productImages, i, parsedUserPhoto);
         images.push(result);
-        console.log(`Image ${i + 1} generated successfully`);
-
-        // Add delay between requests to avoid rate limiting (except after last one)
         if (i < imageCount - 1) {
-          console.log('Waiting 2 seconds before next request...');
+          console.log('Waiting 2s before next request...');
           await delay(2000);
         }
       } catch (err) {
         console.error(`Error generating image ${i + 1}:`, err.message);
         errors.push(err.message);
-        // Continue trying to generate other images
       }
     }
 
-    if (images.length === 0) {
-      return res.status(500).json({
-        error: errors[0] || 'Failed to generate any images'
-      });
-    }
-
-    console.log(`Successfully generated ${images.length} of ${imageCount} images`);
+    if (images.length === 0) return res.status(500).json({ error: errors[0] || 'Failed to generate any images' });
+    console.log(`Generated ${images.length}/${imageCount} images`);
     return res.json({ images });
 
   } catch (error) {
@@ -185,11 +732,9 @@ app.post('/api/tryon/generate', async (req, res) => {
   }
 });
 
-// Endpoint for generating a single image (for individual regeneration)
+// POST /api/tryon/generate-single — regenerate one image
 app.post('/api/tryon/generate-single', async (req, res) => {
-  if (!GEMINI_API_KEY) {
-    return res.status(500).json({ error: 'API key not configured' });
-  }
+  if (!GEMINI_API_KEY) return res.status(500).json({ error: 'API key not configured' });
 
   try {
     const { products, productImages, variation = 0, userPhoto } = req.body;
@@ -219,9 +764,13 @@ app.post('/api/tryon/generate-single', async (req, res) => {
   }
 });
 
+// ============================================================
+// START SERVER
+// ============================================================
+
 app.listen(PORT, () => {
   console.log(`Backend server running on http://localhost:${PORT}`);
-  if (!GEMINI_API_KEY) {
-    console.warn('WARNING: GEMINI_API_KEY is not set in environment variables');
-  }
+  if (!GEMINI_API_KEY) console.warn('WARNING: GEMINI_API_KEY not set');
+  if (!process.env.SHOPBOP_API_KEY) console.warn('WARNING: SHOPBOP_API_KEY not set — using client-id only');
+  console.log(`ShopBop client-id: ${SHOPBOP_CLIENT_ID}`);
 });

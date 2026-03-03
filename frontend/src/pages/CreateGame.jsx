@@ -47,10 +47,13 @@ function CreateGame() {
     setLoading(true);
 
     try {
-      console.log('Creating game with:', formData);
-      navigate('/lobby/DEMO123');
+      const response = await gameApi.createGame(formData);
+      const { game, player } = response.data;
+      setGame(game);
+      setCurrentPlayer(player);
+      navigate(`/lobby/${game.gameId}`);
     } catch (error) {
-      setError(error.response?.data?.message || 'Failed to create game');
+      setError(error.response?.data?.error || 'Failed to create game');
     } finally {
       setLoading(false);
     }

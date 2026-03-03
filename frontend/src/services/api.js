@@ -34,6 +34,7 @@ export const gameApi = {
   createGame: (gameData) => api.post('/games', gameData),
   getGame: (gameId) => api.get(`/games/${gameId}`),
   joinGame: (gameId, playerData) => api.post(`/games/${gameId}/join`, playerData),
+  readyToggle: (gameId, playerData) => api.post(`/games/${gameId}/ready`, playerData),
   startGame: (gameId) => api.post(`/games/${gameId}/start`),
   getPlayers: (gameId) => api.get(`/games/${gameId}/players`),
 };
