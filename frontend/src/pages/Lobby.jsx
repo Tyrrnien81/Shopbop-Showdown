@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { gameApi } from '../services/api';
 import useGameStore from '../store/gameStore';
@@ -20,75 +20,105 @@ function Lobby() {
     error,
   } = useGameStore();
 
-  const [isHost, setIsHost] = useState(true); // Mock as host for dev
+  const [joining, setJoining] = useState(false);
+  const [joinUsername, setJoinUsername] = useState('');
+  const [showJoinForm, setShowJoinForm] = useState(false);
+  const pollRef = useRef(null);
+  const hasJoinedRef = useRef(false); // guard against StrictMode double-invoke
+
+  const isHost = currentPlayer?.isHost ?? false;
 
   useEffect(() => {
-    // Join game if username is provided in URL
     const username = searchParams.get('username');
-    if (username && !currentPlayer) {
+    if (username && !currentPlayer && !hasJoinedRef.current) {
+      hasJoinedRef.current = true;
       handleJoinGame(username);
-    } else {
+    } else if (currentPlayer?.gameId === gameId) {
+      // Already in game — just fetch fresh data and start polling
       fetchGameData();
+      startPolling();
+    } else {
+      // Landed directly on lobby URL — show join form
+      fetchGameData();
+      setShowJoinForm(true);
     }
+
+    return () => stopPolling();
   }, [gameId]);
 
-  const fetchGameData = async () => {
-    setLoading(true);
+  const startPolling = () => {
+    stopPolling();
+    pollRef.current = setInterval(() => {
+      fetchGameData(true); // silent=true so we don't show loading spinner
+    }, 2500);
+  };
+
+  const stopPolling = () => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  };
+
+  const fetchGameData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      // Mock data for development
-      setGame({
-        gameId,
-        theme: 'Runway Ready',
-        budget: 5000,
-        maxPlayers: 4,
-        timeLimit: 300,
-        status: 'LOBBY',
-      });
-      setPlayers([
-        { playerId: '1', username: 'Host', isReady: true, isHost: true },
-        { playerId: '2', username: 'FashionQueen', isReady: true },
-        { playerId: '3', username: 'StyleGuru', isReady: true },
-      ]);
-      setCurrentPlayer({ playerId: '1', username: 'Host', isReady: true, isHost: true });
-    } catch (error) {
-      setError('Failed to load game');
+      const response = await gameApi.getGame(gameId);
+      const data = response.data;
+      setGame(data);
+      setPlayers(data.players || []);
+
+      // If game started, navigate to game page
+      if (data.status === 'PLAYING') {
+        stopPolling();
+        navigate(`/game/${gameId}`);
+      }
+    } catch {
+      if (!silent) setError('Failed to load game');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   const handleJoinGame = async (username) => {
-    setLoading(true);
+    setJoining(true);
     try {
-      // Mock for development
-      setCurrentPlayer({ playerId: 'new', username, isReady: false });
-      fetchGameData();
+      const response = await gameApi.joinGame(gameId, { username });
+      const { player, game: joinedGame } = response.data;
+      setCurrentPlayer(player);
+      setGame(joinedGame);
+      setPlayers(joinedGame.players || []);
+      setShowJoinForm(false);
+      startPolling();
     } catch (error) {
-      setError('Failed to join game');
+      setError(error.response?.data?.error || 'Failed to join game');
     } finally {
-      setLoading(false);
+      setJoining(false);
     }
   };
 
-  const handleToggleReady = () => {
-    if (currentPlayer) {
-      const newReadyState = !currentPlayer.isReady;
-      setCurrentPlayer({ ...currentPlayer, isReady: newReadyState });
-      // Update in players list too
+  const handleToggleReady = async () => {
+    if (!currentPlayer) return;
+    const newReady = !currentPlayer.isReady;
+    try {
+      await gameApi.readyToggle(gameId, { playerId: currentPlayer.playerId, isReady: newReady });
+      setCurrentPlayer({ ...currentPlayer, isReady: newReady });
       setPlayers(players.map(p =>
-        p.playerId === currentPlayer.playerId
-          ? { ...p, isReady: newReadyState }
-          : p
+        p.playerId === currentPlayer.playerId ? { ...p, isReady: newReady } : p
       ));
+    } catch {
+      setError('Failed to update ready status');
     }
   };
 
   const handleStartGame = async () => {
     setLoading(true);
     try {
+      await gameApi.startGame(gameId);
+      stopPolling();
       navigate(`/game/${gameId}`);
     } catch (error) {
-      setError('Failed to start game');
+      setError(error.response?.data?.error || 'Failed to start game');
     } finally {
       setLoading(false);
     }
@@ -104,7 +134,50 @@ function Lobby() {
     return `${mins}:${String(secs).padStart(2, '0')}`;
   };
 
-  if (isLoading) {
+  // Join form for players arriving via direct link
+  if (showJoinForm && !currentPlayer) {
+    return (
+      <div className="lobby-container">
+        <header className="lobby-header">
+          <h1>Join Game</h1>
+          <div className="game-code-display">
+            <span>{gameId}</span>
+          </div>
+        </header>
+        <div style={{ maxWidth: '400px', margin: '40px auto', textAlign: 'center' }}>
+          <p style={{ color: 'var(--text-light)', marginBottom: '24px' }}>Enter your name to join the showdown</p>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            <input
+              type="text"
+              placeholder="Your fashion name..."
+              value={joinUsername}
+              onChange={(e) => setJoinUsername(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && joinUsername.trim() && handleJoinGame(joinUsername.trim())}
+              style={{
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-light)',
+                color: 'var(--text-primary)',
+                padding: '10px 16px',
+                borderRadius: '8px',
+                fontSize: '1rem',
+                width: '220px',
+              }}
+            />
+            <button
+              onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim())}
+              className="btn btn-primary"
+              disabled={joining || !joinUsername.trim()}
+            >
+              {joining ? 'Joining...' : 'Join'}
+            </button>
+          </div>
+          {error && <div className="error-message" style={{ marginTop: '16px' }}>{error}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  if (isLoading && !game) {
     return (
       <div className="lobby-container">
         <div className="loading">
@@ -141,11 +214,11 @@ function Lobby() {
         <div className="game-info-cards">
           <div className="info-card">
             <div className="info-card-label">Theme</div>
-            <div className="info-card-value">{game.theme}</div>
+            <div className="info-card-value">{game.themeName || game.theme}</div>
           </div>
           <div className="info-card">
             <div className="info-card-label">Budget</div>
-            <div className="info-card-value">${game.budget.toLocaleString()}</div>
+            <div className="info-card-value">${game.budget?.toLocaleString()}</div>
           </div>
           <div className="info-card">
             <div className="info-card-label">Time Limit</div>
@@ -209,31 +282,43 @@ function Lobby() {
         </div>
       </section>
 
+      {/* Share Link */}
+      {currentPlayer && (
+        <div style={{ textAlign: 'center', color: 'var(--text-light)', fontSize: '0.85rem', marginBottom: '8px' }}>
+          Share this link to invite friends:{' '}
+          <code style={{ color: 'var(--text-primary)' }}>
+            {window.location.origin}/lobby/{gameId}?username=FriendName
+          </code>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="lobby-actions">
-        <button onClick={handleToggleReady} className={`btn ${currentPlayer?.isReady ? 'btn-secondary' : 'btn-outline'}`}>
-          {currentPlayer?.isReady ? (
-            <>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M20 6L9 17l-5-5" />
-              </svg>
-              Ready!
-            </>
-          ) : (
-            <>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-              </svg>
-              Mark Ready
-            </>
-          )}
-        </button>
+        {currentPlayer && (
+          <button onClick={handleToggleReady} className={`btn ${currentPlayer?.isReady ? 'btn-secondary' : 'btn-outline'}`}>
+            {currentPlayer?.isReady ? (
+              <>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20 6L9 17l-5-5" />
+                </svg>
+                Ready!
+              </>
+            ) : (
+              <>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                </svg>
+                Mark Ready
+              </>
+            )}
+          </button>
+        )}
 
         {isHost && (
           <button
             onClick={handleStartGame}
             className="btn btn-primary"
-            disabled={!allReady}
+            disabled={!allReady || isLoading}
           >
             {allReady ? (
               <>
