@@ -68,13 +68,13 @@ const THEME_QUERIES = {
 
 // Category ID → display name mapping
 const CATEGORIES = [
-  { id: 'dresses', name: 'Dresses', query: 'dress' },
-  { id: 'tops', name: 'Tops', query: 'top blouse shirt sweater' },
-  { id: 'bottoms', name: 'Bottoms', query: 'pants jeans skirt trouser' },
-  { id: 'shoes', name: 'Shoes', query: 'shoes heels boots sandals' },
-  { id: 'jewelry', name: 'Jewelry', query: 'jewelry necklace earrings' },
-  { id: 'outerwear', name: 'Outerwear', query: 'jacket coat blazer' },
-  { id: 'accessories', name: 'Accessories', query: 'bag purse accessory' },
+  { id: 'dresses', name: 'Dresses', queries: ['dresses'] },
+  { id: 'tops', name: 'Tops', queries: ['tops', 'blouses', 'shirts'] },
+  { id: 'bottoms', name: 'Bottoms', queries: ['pants', 'jeans', 'skirts'] },
+  { id: 'shoes', name: 'Shoes', queries: ['shoes', 'heels', 'boots'] },
+  { id: 'jewelry', name: 'Jewelry', queries: ['jewelry', 'necklaces', 'earrings'] },
+  { id: 'outerwear', name: 'Outerwear', queries: ['jackets', 'coats', 'blazers'] },
+  { id: 'accessories', name: 'Accessories', queries: ['bags', 'scarves', 'hats'] },
 ];
 
 // ============================================================
@@ -83,12 +83,18 @@ const CATEGORIES = [
 
 async function shopbopFetch(path, params = {}) {
   const url = new URL(`${SHOPBOP_API_BASE}${path}`);
-  Object.entries(params).forEach(([k, v]) => {
+  // Always include required params per Shopbop API docs
+  const defaults = { lang: 'en-US', dept: 'WOMENS' };
+  Object.entries({ ...defaults, ...params }).forEach(([k, v]) => {
     if (v != null && v !== '') url.searchParams.set(k, String(v));
   });
   console.log('Shopbop URL:', url.toString());
 
-  const headers = { 'client-id': SHOPBOP_CLIENT_ID };
+  const headers = {
+    'accept': 'application/json',
+    'Client-Id': SHOPBOP_CLIENT_ID,
+    'Client-Version': '1.0.0',
+  };
   if (process.env.SHOPBOP_API_KEY) {
     headers['x-api-key'] = process.env.SHOPBOP_API_KEY;
   }
@@ -111,15 +117,16 @@ function normalizeImageUrl(src) {
 }
 
 // Guess normalized category from raw strings
+// Order matters: check more specific categories first to avoid misclassification
+// (e.g. "Top Handle Bag" should be Accessories, not Tops)
 function guessCategory(rawCategory = '', productName = '') {
   const text = `${rawCategory} ${productName}`.toLowerCase();
-  if (text.includes('dress') && !text.includes('underdress')) return 'Dresses';
-  if (text.includes('top') || text.includes('shirt') || text.includes('blouse') ||
-      text.includes('sweater') || text.includes('tank') || text.includes('tee') ||
-      text.includes('bodysuit') || text.includes('pullover') || text.includes('cardigan')) return 'Tops';
-  if (text.includes('pant') || text.includes('jean') || text.includes('skirt') ||
-      text.includes('short') || text.includes('trouser') || text.includes('legging') ||
-      text.includes('denim') || text.includes('culotte')) return 'Bottoms';
+  // Check Accessories/Bags BEFORE Tops (to avoid "Top Handle Bag" -> Tops)
+  if (text.includes('bag') || text.includes('tote') || text.includes('purse') ||
+      text.includes('clutch') || text.includes('crossbody') || text.includes('wallet') ||
+      text.includes('belt') || text.includes('scarf') || text.includes('hat') ||
+      text.includes('sunglasses') || text.includes('accessory') || text.includes('accessories')) return 'Accessories';
+  // Check Shoes before Tops (to avoid "Shoe Top" issues)
   if (text.includes('shoe') || text.includes('heel') || text.includes('boot') ||
       text.includes('sandal') || text.includes('sneaker') || text.includes('flat') ||
       text.includes('pump') || text.includes('loafer') || text.includes('mule') ||
@@ -127,13 +134,16 @@ function guessCategory(rawCategory = '', productName = '') {
   if (text.includes('jewel') || text.includes('necklace') || text.includes('earring') ||
       text.includes('ring') || text.includes('bracelet') || text.includes('pendant') ||
       text.includes('choker') || text.includes('cuff') || text.includes('stud')) return 'Jewelry';
+  if (text.includes('dress') && !text.includes('underdress')) return 'Dresses';
   if (text.includes('coat') || text.includes('jacket') || text.includes('blazer') ||
       text.includes('parka') || text.includes('vest') || text.includes('outerwear') ||
       text.includes('trench') || text.includes('puffer') || text.includes('windbreaker')) return 'Outerwear';
-  if (text.includes('bag') || text.includes('tote') || text.includes('purse') ||
-      text.includes('clutch') || text.includes('crossbody') || text.includes('wallet') ||
-      text.includes('belt') || text.includes('scarf') || text.includes('hat') ||
-      text.includes('sunglasses') || text.includes('accessory') || text.includes('accessories')) return 'Accessories';
+  if (text.includes('pant') || text.includes('jean') || text.includes('skirt') ||
+      text.includes('short') || text.includes('trouser') || text.includes('legging') ||
+      text.includes('denim') || text.includes('culotte')) return 'Bottoms';
+  if (text.includes('top') || text.includes('shirt') || text.includes('blouse') ||
+      text.includes('sweater') || text.includes('tank') || text.includes('tee') ||
+      text.includes('bodysuit') || text.includes('pullover') || text.includes('cardigan')) return 'Tops';
   return rawCategory || 'Other';
 }
 
@@ -226,12 +236,26 @@ app.get('/api/products/search', async (req, res) => {
       total = result.total;
 
     } else if (category) {
-      // Category-specific search
+      // Category-specific search — fire one search per keyword for reliability
       const cat = CATEGORIES.find(c => c.id === category.toLowerCase() || c.name.toLowerCase() === category.toLowerCase());
-      const q = cat ? cat.query : category;
-      const result = await searchShopbop(q, limitNum, offset);
-      products = result.products;
-      total = result.total;
+      const queries = cat ? cat.queries : [category];
+      const perQueryLimit = Math.max(Math.ceil(limitNum / queries.length), 5);
+
+      const fetches = queries.map(q =>
+        searchShopbop(q, perQueryLimit, offset)
+          .then(r => r.products)
+          .catch(() => [])
+      );
+      const results = await Promise.all(fetches);
+      products = results.flat();
+      // Deduplicate by productSin
+      const seen = new Set();
+      products = products.filter(p => {
+        if (seen.has(p.productSin)) return false;
+        seen.add(p.productSin);
+        return true;
+      });
+      total = products.length;
 
     } else if (theme) {
       // Theme-based search: fetch from a few categories in parallel for variety
@@ -239,7 +263,7 @@ app.get('/api/products/search', async (req, res) => {
       const perCategoryLimit = Math.ceil(limitNum / CATEGORIES.length);
 
       const fetches = CATEGORIES.map(cat =>
-        searchShopbop(`${themeQuery} ${cat.query}`, perCategoryLimit, 0)
+        searchShopbop(`${themeQuery} ${cat.queries[0]}`, perCategoryLimit, 0)
           .then(r => r.products)
           .catch(() => [])
       );
@@ -252,17 +276,6 @@ app.get('/api/products/search', async (req, res) => {
       const result = await searchShopbop('fashion', limitNum, offset);
       products = result.products;
       total = result.total;
-    }
-
-    // Apply category filter if specified (post-fetch)
-    if (category) {
-      const catName = CATEGORIES.find(c =>
-        c.id === category.toLowerCase() || c.name.toLowerCase() === category.toLowerCase()
-      )?.name || category;
-      products = products.filter(p =>
-        p.category.toLowerCase() === catName.toLowerCase() ||
-        p.category === catName
-      );
     }
 
     // Apply price range filters
