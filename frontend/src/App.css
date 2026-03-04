@@ -201,6 +201,7 @@ input::placeholder {
    HOME PAGE
    ============================================ */
 .home-container {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -208,6 +209,71 @@ input::placeholder {
   min-height: 100vh;
   padding: 2rem;
   text-align: center;
+  overflow: hidden;
+}
+
+/* ── Background Carousel ── */
+.home-carousel-bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: 12px;
+  padding: 20px 0;
+  overflow: hidden;
+  opacity: 0.18;
+  pointer-events: none;
+}
+
+.carousel-track {
+  display: flex;
+  gap: 16px;
+  width: max-content;
+  pointer-events: auto;
+}
+
+.carousel-track-left {
+  animation: scroll-left 60s linear infinite;
+}
+
+.carousel-track-right {
+  transform: translateX(-50%);
+  animation: scroll-right 65s linear infinite;
+}
+
+@keyframes scroll-left {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+@keyframes scroll-right {
+  0%   { transform: translateX(-50%); }
+  100% { transform: translateX(0); }
+}
+
+.carousel-card {
+  flex-shrink: 0;
+  width: 180px;
+  height: 240px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg-warm);
+}
+
+.carousel-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ── Home Content (above carousel) ── */
+.home-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .home-presented-by {
@@ -2673,6 +2739,11 @@ input::placeholder {
 
   .home-actions .btn {
     width: 100%;
+  }
+
+  .carousel-card {
+    width: 120px;
+    height: 160px;
   }
 
   .create-game-header {
