@@ -50,6 +50,11 @@ function Results() {
   const navigate = useNavigate();
   const { results, setResults, resetGame } = useGameStore();
   const [isLoading, setIsLoadingLocal] = useState(true);
+  const [modelView, setModelView] = useState({}); // outfitId → true means show model image
+
+  const toggleView = (outfitId) => {
+    setModelView(prev => ({ ...prev, [outfitId]: !prev[outfitId] }));
+  };
 
   useEffect(() => {
     fetchResults();
@@ -118,14 +123,37 @@ function Results() {
           return (
             <div key={result.outfitId} className={`podium-place ${placeClass}`}>
               {/* Outfit Preview */}
-              <div className="podium-outfit">
-                <div className="podium-outfit-grid">
-                  {result.products.slice(0, 4).map((product) => (
-                    <div key={product.productSin} className="podium-outfit-item">
-                      <img src={product.imageUrl} alt={product.name} />
-                    </div>
-                  ))}
-                </div>
+              <div
+                className="podium-outfit"
+                onClick={() => result.tryOnImage && toggleView(result.outfitId)}
+                style={result.tryOnImage ? { cursor: 'pointer' } : {}}
+                title={result.tryOnImage ? (modelView[result.outfitId] ? 'Click to see items' : 'Click to see model') : undefined}
+              >
+                {result.tryOnImage && modelView[result.outfitId] ? (
+                  <img
+                    src={result.tryOnImage}
+                    alt={`${result.username}'s model look`}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }}
+                  />
+                ) : (
+                  <div className="podium-outfit-grid">
+                    {result.products.slice(0, 4).map((product) => (
+                      <div key={product.productSin} className="podium-outfit-item">
+                        <img src={product.imageUrl} alt={product.name} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {result.tryOnImage && (
+                  <div style={{
+                    position: 'absolute', bottom: '4px', right: '4px',
+                    background: 'rgba(0,0,0,0.55)', borderRadius: '4px',
+                    padding: '2px 6px', fontSize: '0.65rem', color: 'white',
+                    pointerEvents: 'none',
+                  }}>
+                    {modelView[result.outfitId] ? 'items' : 'model'} →
+                  </div>
+                )}
               </div>
 
               {/* Rank Emoji */}
@@ -154,14 +182,27 @@ function Results() {
           {restOfResults.map((result) => (
             <div key={result.outfitId} className="result-item">
               <div className="result-rank">#{result.rank}</div>
-              <div className="result-outfit-preview">
-                {result.products.slice(0, 4).map((product) => (
+              <div
+                className="result-outfit-preview"
+                onClick={() => result.tryOnImage && toggleView(result.outfitId)}
+                style={result.tryOnImage ? { cursor: 'pointer', position: 'relative' } : {}}
+                title={result.tryOnImage ? (modelView[result.outfitId] ? 'Click to see items' : 'Click to see model') : undefined}
+              >
+                {result.tryOnImage && modelView[result.outfitId] ? (
                   <img
-                    key={product.productSin}
-                    src={product.imageUrl}
-                    alt={product.name}
+                    src={result.tryOnImage}
+                    alt={`${result.username}'s model look`}
+                    style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px' }}
                   />
-                ))}
+                ) : (
+                  result.products.slice(0, 4).map((product) => (
+                    <img
+                      key={product.productSin}
+                      src={product.imageUrl}
+                      alt={product.name}
+                    />
+                  ))
+                )}
               </div>
               <div className="result-info">
                 <div className="result-player-name">{result.username}</div>

@@ -339,6 +339,7 @@ function Game() {
           playerId: currentPlayer.playerId,
           products: currentOutfit.products,
           totalPrice: currentOutfit.totalPrice,
+          tryOnImage: selectedImage || null,
         });
       }
       navigate(`/voting/${gameId}`);
@@ -347,7 +348,7 @@ function Game() {
     } finally {
       setLoading(false);
     }
-  }, [currentOutfit, gameId, navigate, setLoading]);
+  }, [currentOutfit, gameId, navigate, setLoading, selectedImage]);
 
   // Timer countdown
   useEffect(() => {

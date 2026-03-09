@@ -2228,6 +2228,8 @@ input::placeholder {
 .podium-outfit {
   width: 200px;
   margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
 }
 
 .podium-place.first .podium-outfit {
