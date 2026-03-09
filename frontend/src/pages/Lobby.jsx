@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { gameApi } from '../services/api';
+import { gameApi, avatarApi } from '../services/api';
 import useGameStore from '../store/gameStore';
 
 function Lobby() {
@@ -28,6 +28,18 @@ function Lobby() {
   const pollRef = useRef(null);
   const hasJoinedRef = useRef(false); // guard against StrictMode double-invoke
   const fileInputRef = useRef(null);
+
+  // Avatar generation state
+  const [photoTab, setPhotoTab] = useState('upload'); // 'upload' | 'ai'
+  const [avatarForm, setAvatarForm] = useState({
+    gender: '',
+    ethnicity: '',
+    height: '',
+    waistSize: '',
+    topSize: '',
+  });
+  const [generatingAvatar, setGeneratingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState(null);
 
   const isHost = currentPlayer?.isHost ?? false;
 
@@ -152,6 +164,21 @@ function Lobby() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const handleGenerateAvatar = async () => {
+    setGeneratingAvatar(true);
+    setAvatarError(null);
+    try {
+      const res = await avatarApi.generate(avatarForm);
+      const { base64, mimeType } = res.data;
+      setUserPhoto(`data:${mimeType};base64,${base64}`);
+      setPhotoTab('upload'); // switch to preview tab
+    } catch (err) {
+      setAvatarError(err.response?.data?.error || 'Failed to generate avatar');
+    } finally {
+      setGeneratingAvatar(false);
+    }
+  };
+
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -255,10 +282,45 @@ function Lobby() {
         </div>
       )}
 
-      {/* Photo Upload Section */}
+      {/* Photo Section */}
       <section className="photo-upload-section">
         <h2>Your Photo</h2>
-        <p className="photo-upload-hint">Upload a photo so the AI model looks like you!</p>
+        <p className="photo-upload-hint">Used so the AI try-on model looks like you!</p>
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', justifyContent: 'center' }}>
+          <button
+            onClick={() => setPhotoTab('upload')}
+            style={{
+              padding: '6px 18px',
+              borderRadius: '20px',
+              border: '1px solid var(--border-light)',
+              background: photoTab === 'upload' ? 'var(--primary-orange)' : 'var(--bg-card)',
+              color: photoTab === 'upload' ? '#fff' : 'var(--text-primary)',
+              fontWeight: photoTab === 'upload' ? '600' : '400',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+            }}
+          >
+            Upload Photo
+          </button>
+          <button
+            onClick={() => setPhotoTab('ai')}
+            style={{
+              padding: '6px 18px',
+              borderRadius: '20px',
+              border: '1px solid var(--border-light)',
+              background: photoTab === 'ai' ? 'var(--primary-orange)' : 'var(--bg-card)',
+              color: photoTab === 'ai' ? '#fff' : 'var(--text-primary)',
+              fontWeight: photoTab === 'ai' ? '600' : '400',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+            }}
+          >
+            ✨ AI Generate
+          </button>
+        </div>
+
         <input
           type="file"
           ref={fileInputRef}
@@ -266,26 +328,125 @@ function Lobby() {
           onChange={handlePhotoUpload}
           style={{ display: 'none' }}
         />
-        {userPhoto ? (
-          <div className="photo-preview">
-            <img src={userPhoto} alt="Your photo" className="photo-preview-img" />
-            <button className="photo-remove-btn" onClick={handleRemovePhoto}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 6L6 18M6 6l12 12"/>
+
+        {/* Upload Tab */}
+        {photoTab === 'upload' && (
+          userPhoto ? (
+            <div className="photo-preview">
+              <img src={userPhoto} alt="Your photo" className="photo-preview-img" />
+              <button className="photo-remove-btn" onClick={handleRemovePhoto}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+                Remove
+              </button>
+            </div>
+          ) : (
+            <button className="photo-upload-btn" onClick={() => fileInputRef.current?.click()}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
               </svg>
-              Remove
+              <span>Upload Photo</span>
+              <span className="photo-upload-optional">Optional</span>
             </button>
+          )
+        )}
+
+        {/* AI Avatar Tab */}
+        {photoTab === 'ai' && (
+          <div style={{ maxWidth: '380px', margin: '0 auto' }}>
+            <p style={{ color: 'var(--text-light)', fontSize: '0.82rem', textAlign: 'center', marginBottom: '14px' }}>
+              Describe yourself and we'll generate a model that looks like you
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-light)', marginBottom: '4px' }}>Gender</label>
+                <select
+                  value={avatarForm.gender}
+                  onChange={e => setAvatarForm(f => ({ ...f, gender: e.target.value }))}
+                  style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: '8px', fontSize: '0.85rem' }}
+                >
+                  <option value="">Any</option>
+                  <option value="woman">Woman</option>
+                  <option value="man">Man</option>
+                  <option value="non-binary person">Non-binary</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-light)', marginBottom: '4px' }}>Ethnicity</label>
+                <input
+                  type="text"
+                  placeholder="e.g. South Asian"
+                  value={avatarForm.ethnicity}
+                  onChange={e => setAvatarForm(f => ({ ...f, ethnicity: e.target.value }))}
+                  style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: '8px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-light)', marginBottom: '4px' }}>Height</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 5ft 6in or 168cm"
+                  value={avatarForm.height}
+                  onChange={e => setAvatarForm(f => ({ ...f, height: e.target.value }))}
+                  style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: '8px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-light)', marginBottom: '4px' }}>Top Size</label>
+                <select
+                  value={avatarForm.topSize}
+                  onChange={e => setAvatarForm(f => ({ ...f, topSize: e.target.value }))}
+                  style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: '8px', fontSize: '0.85rem' }}
+                >
+                  <option value="">Any</option>
+                  <option value="XS">XS</option>
+                  <option value="S">S</option>
+                  <option value="M">M</option>
+                  <option value="L">L</option>
+                  <option value="XL">XL</option>
+                  <option value="XXL">XXL</option>
+                </select>
+              </div>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-light)', marginBottom: '4px' }}>Waist Size</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 28 or 71cm"
+                  value={avatarForm.waistSize}
+                  onChange={e => setAvatarForm(f => ({ ...f, waistSize: e.target.value }))}
+                  style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border-light)', color: 'var(--text-primary)', padding: '8px 10px', borderRadius: '8px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                />
+              </div>
+            </div>
+
+            {avatarError && (
+              <div style={{ color: '#ff6b6b', fontSize: '0.8rem', textAlign: 'center', marginBottom: '10px' }}>
+                {avatarError}
+              </div>
+            )}
+
+            <button
+              onClick={handleGenerateAvatar}
+              disabled={generatingAvatar}
+              className="btn btn-primary"
+              style={{ width: '100%' }}
+            >
+              {generatingAvatar ? (
+                <>
+                  <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
+                  Generating...
+                </>
+              ) : (
+                <>✨ Generate My Avatar</>
+              )}
+            </button>
+            <p style={{ color: 'var(--text-light)', fontSize: '0.75rem', textAlign: 'center', marginTop: '8px' }}>
+              All fields optional — more detail = better match
+            </p>
           </div>
-        ) : (
-          <button className="photo-upload-btn" onClick={() => fileInputRef.current?.click()}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-              <circle cx="8.5" cy="8.5" r="1.5"/>
-              <polyline points="21 15 16 10 5 21"/>
-            </svg>
-            <span>Upload Photo</span>
-            <span className="photo-upload-optional">Optional</span>
-          </button>
         )}
       </section>
 
