@@ -230,7 +230,7 @@ function Game() {
     setValidationErrors(validateOutfit());
   }, [currentOutfit.products, validateOutfit]);
 
-  // Open modal (no generation)
+  // Open modal — auto-generate if user has a photo set
   const handleOpenModal = () => {
     if (currentOutfit.products.length === 0) {
       setGenerationError('Please select items first');
@@ -238,6 +238,10 @@ function Game() {
     }
     setShowModal(true);
     setGenerationError(null);
+    if (userPhoto && !generatedImages.some(img => img)) {
+      // Kick off generation immediately using their photo as the model
+      setTimeout(() => handleGenerateAll(), 0);
+    }
   };
 
   // Generate all 3 images

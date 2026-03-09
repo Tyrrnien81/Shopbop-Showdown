@@ -63,4 +63,9 @@ export const chatApi = {
   sendMessage: (data) => api.post('/chat/message', data),
 };
 
+// Avatar Generation API
+export const avatarApi = {
+  generate: (descriptors) => api.post('/avatar/generate', descriptors, { timeout: 60000 }),
+};
+
 export default api;

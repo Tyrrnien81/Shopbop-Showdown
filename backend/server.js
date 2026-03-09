@@ -785,15 +785,28 @@ async function generateSingleImage(products, productImages, variation = 0, userP
 
   const hasUserPhoto = userPhoto && userPhoto.base64;
 
+  const parts = [];
+
+  // Put reference photo FIRST so Gemini sees it before any instructions
+  if (hasUserPhoto) {
+    parts.push({ text: 'REFERENCE PERSON (the generated model MUST look exactly like this person):' });
+    parts.push({
+      inlineData: {
+        mimeType: userPhoto.mimeType || 'image/jpeg',
+        data: userPhoto.base64
+      }
+    });
+  }
+
   const prompt = hasUserPhoto
-    ? `Look at the reference photo of this person and the product images I'm providing. Generate a high-quality fashion photograph of a model who looks EXACTLY like the person in the reference photo, wearing ALL of these EXACT items together as an outfit.
+    ? `Now look at the product images below and generate a high-quality fashion photograph of THIS EXACT PERSON wearing ALL of these items together as an outfit.
 
 The items are:
 ${products.map((p, i) => `${i + 1}. ${p.name} (${p.category}) by ${p.brand}`).join('\n')}
 
 CRITICAL REQUIREMENTS:
-- The model MUST closely resemble the person in the reference photo — match their face, skin tone, hair color, hair style, and body type
-- The model MUST wear items that match the EXACT colors, patterns, and styles shown in the product reference images
+- You MUST generate the SAME person shown in the reference photo above — identical face, skin tone, hair color, hair style, and body type. Do not substitute a different person.
+- The model MUST wear items that match the EXACT colors, patterns, and styles shown in the product images
 - Combine all items into one cohesive outfit on the model
 - The model should be ${variationPrompts[variation % variationPrompts.length]}
 - Full-body shot, professional fashion photography style
@@ -814,18 +827,7 @@ CRITICAL REQUIREMENTS:
 - All items must be clearly visible
 - Photorealistic, high resolution`;
 
-  const parts = [{ text: prompt }];
-
-  // Add user photo first if provided
-  if (hasUserPhoto) {
-    parts.push({
-      inlineData: {
-        mimeType: userPhoto.mimeType || 'image/jpeg',
-        data: userPhoto.base64
-      }
-    });
-    parts.push({ text: '(Above: Reference photo of the person — the generated model should look like this person)' });
-  }
+  parts.push({ text: prompt });
 
   if (productImages && productImages.length > 0) {
     for (let i = 0; i < productImages.length; i++) {
@@ -950,6 +952,61 @@ app.post('/api/tryon/generate-single', async (req, res) => {
 
   } catch (error) {
     console.error('Error in /api/tryon/generate-single:', error);
+    return res.status(500).json({ error: error.message || 'Internal server error' });
+  }
+});
+
+// ============================================================
+// AVATAR GENERATION ENDPOINT
+// ============================================================
+
+// POST /api/avatar/generate — generate a personalized model avatar from physical descriptors
+app.post('/api/avatar/generate', async (req, res) => {
+  if (!GEMINI_API_KEY) return res.status(500).json({ error: 'API key not configured' });
+
+  const { ethnicity, height, waistSize, topSize, gender } = req.body;
+
+  const descriptors = [];
+  if (ethnicity) descriptors.push(ethnicity);
+  if (gender) descriptors.push(gender);
+  if (height) descriptors.push(`${height} tall`);
+  if (waistSize) descriptors.push(`waist size ${waistSize}`);
+  if (topSize) descriptors.push(`wears a size ${topSize} top`);
+
+  const description = descriptors.length > 0
+    ? descriptors.join(', ')
+    : 'average build';
+
+  const prompt = `Generate a high-quality, photorealistic full-body fashion photography portrait of a ${description} person. The person should be standing in a neutral, confident pose against a clean white studio background. Professional fashion model photography style, full-body shot from head to toe. The image should look like a real person, natural lighting, no clothing — just a plain white t-shirt and jeans so the body type and proportions are visible. This will be used as a reference photo for virtual fashion try-on.`;
+
+  try {
+    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || 'Failed to generate avatar');
+    }
+
+    const data = await response.json();
+    const candidate = data.candidates?.[0];
+    if (!candidate) throw new Error('No candidates returned');
+
+    const imagePart = candidate.content?.parts?.find(p => p.inlineData?.mimeType?.startsWith('image/'));
+    if (!imagePart) throw new Error('No image in response');
+
+    return res.json({
+      base64: imagePart.inlineData.data,
+      mimeType: imagePart.inlineData.mimeType,
+    });
+  } catch (error) {
+    console.error('Error in /api/avatar/generate:', error);
     return res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
