@@ -48,7 +48,7 @@ const mockResults = [
 function Results() {
   const { gameId } = useParams();
   const navigate = useNavigate();
-  const { results, setResults, resetGame } = useGameStore();
+  const { results, setResults, resetGame, isSinglePlayer } = useGameStore();
   const [isLoading, setIsLoadingLocal] = useState(true);
   const [modelView, setModelView] = useState({}); // outfitId → true means show model image
 
@@ -111,7 +111,7 @@ function Results() {
     <div className="results-container">
       {/* Header */}
       <header className="results-header">
-        <h1>The Results Are In</h1>
+        <h1>{isSinglePlayer ? 'Your Look' : 'The Results Are In'}</h1>
       </header>
 
       {/* Winner Podium */}

@@ -6,6 +6,7 @@ const useGameStore = create((set, get) => ({
   players: [],
   currentPlayer: null,
   gameStatus: null, // LOBBY | IN_PROGRESS | VOTING | COMPLETED
+  isSinglePlayer: false,
 
   // Outfit State
   currentOutfit: {
@@ -26,7 +27,7 @@ const useGameStore = create((set, get) => ({
   error: null,
 
   // Game Actions
-  setGame: (game) => set({ game, gameStatus: game?.status }),
+  setGame: (game) => set({ game, gameStatus: game?.status, isSinglePlayer: Boolean(game?.singlePlayer) }),
 
   setPlayers: (players) => set({ players }),
 
@@ -103,6 +104,7 @@ const useGameStore = create((set, get) => ({
     players: [],
     currentPlayer: null,
     gameStatus: null,
+    isSinglePlayer: false,
     currentOutfit: { products: [], totalPrice: 0 },
     userPhoto: null,
     outfits: [],

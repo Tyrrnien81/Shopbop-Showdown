@@ -22,6 +22,7 @@ function CreateGame() {
     budget: 5000,
     maxPlayers: 4,
     timeLimit: 300,
+    singlePlayer: false,
   });
 
   const handleThemeSelect = (themeId) => {
@@ -51,7 +52,14 @@ function CreateGame() {
       const { game, player } = response.data;
       setGame(game);
       setCurrentPlayer(player);
-      navigate(`/lobby/${game.gameId}`);
+
+      if (formData.singlePlayer) {
+        // Auto-start and go straight to game
+        await gameApi.startGame(game.gameId);
+        navigate(`/game/${game.gameId}`);
+      } else {
+        navigate(`/lobby/${game.gameId}`);
+      }
     } catch (error) {
       setError(error.response?.data?.error || 'Failed to create game');
     } finally {
@@ -119,6 +127,53 @@ function CreateGame() {
               <span>Street ($500)</span>
               <span>Couture ($10,000)</span>
             </div>
+          </div>
+
+          {/* Solo Mode Toggle */}
+          <div className="solo-mode-section" style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '16px 20px',
+            background: formData.singlePlayer ? 'rgba(238, 74, 27, 0.08)' : 'var(--bg-card)',
+            border: `1px solid ${formData.singlePlayer ? 'var(--primary-orange)' : 'var(--border-light)'}`,
+            borderRadius: 'var(--radius-md)',
+            marginBottom: '24px',
+            transition: 'all 0.2s',
+          }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Solo Mode</div>
+              <div style={{ color: 'var(--text-light)', fontSize: '0.8rem', marginTop: '2px' }}>
+                Skip the lobby and voting. Perfect for testing and demos.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFormData(prev => ({ ...prev, singlePlayer: !prev.singlePlayer }))}
+              style={{
+                width: '48px',
+                height: '26px',
+                borderRadius: '13px',
+                border: 'none',
+                background: formData.singlePlayer ? 'var(--primary-orange)' : 'var(--border-medium)',
+                position: 'relative',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                flexShrink: 0,
+              }}
+            >
+              <div style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                background: 'white',
+                position: 'absolute',
+                top: '3px',
+                left: formData.singlePlayer ? '25px' : '3px',
+                transition: 'left 0.2s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              }} />
+            </button>
           </div>
 
           {/* Launch Button */}

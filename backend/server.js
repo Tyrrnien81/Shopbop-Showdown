@@ -321,7 +321,7 @@ app.get('/api/products/:productSin', async (req, res) => {
 
 // POST /api/games — create a new game
 app.post('/api/games', (req, res) => {
-  const { hostUsername, theme, budget, maxPlayers, timeLimit } = req.body;
+  const { hostUsername, theme, budget, maxPlayers, timeLimit, singlePlayer } = req.body;
 
   if (!hostUsername || !theme) {
     return res.status(400).json({ error: 'hostUsername and theme are required' });
@@ -356,6 +356,7 @@ app.post('/api/games', (req, res) => {
     startedAt: null,
     endsAt: null,
     endedAt: null,
+    singlePlayer: Boolean(singlePlayer),
   };
 
   games.set(gameId, game);
@@ -470,11 +471,17 @@ app.post('/api/outfits', (req, res) => {
   player.hasSubmitted = true;
   player.outfitId = outfitId;
 
-  // Auto-advance to VOTING if all players submitted
+  // Auto-advance when all players have submitted
   const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
   if (gamePlayers.every(p => p.hasSubmitted)) {
-    game.status = 'VOTING';
-    console.log(`Game ${gameId} moved to VOTING phase`);
+    if (game.singlePlayer) {
+      game.status = 'COMPLETED';
+      game.endedAt = new Date().toISOString();
+      console.log(`Solo game ${gameId} completed (skipping voting)`);
+    } else {
+      game.status = 'VOTING';
+      console.log(`Game ${gameId} moved to VOTING phase`);
+    }
   }
 
   console.log(`Outfit ${outfitId} submitted by player ${playerId}`);
@@ -584,6 +591,19 @@ app.get('/api/games/:gameId/results', (req, res) => {
       totalPrice: outfit.totalPrice,
     };
   });
+
+  // Single-player: generate a synthetic style score
+  if (game.singlePlayer) {
+    results.forEach(r => {
+      const itemCount = r.products.length;
+      const budgetEfficiency = Math.min(r.totalPrice / game.budget, 1);
+      const categorySet = new Set(r.products.map(p => p.category));
+      const variety = categorySet.size;
+      // Score: reward variety (up to 5 categories) and budget usage
+      r.score = parseFloat(Math.min((variety * 0.7 + budgetEfficiency * 1.5 + itemCount * 0.2), 5).toFixed(1));
+      r.totalVotes = 1;
+    });
+  }
 
   results.sort((a, b) => b.score - a.score || b.totalVotes - a.totalVotes);
   results.forEach((r, i) => { r.rank = i + 1; });

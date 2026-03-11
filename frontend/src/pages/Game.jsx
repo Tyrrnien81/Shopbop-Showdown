@@ -342,7 +342,8 @@ function Game() {
           tryOnImage: selectedImage || null,
         });
       }
-      navigate(`/voting/${gameId}`);
+      const { isSinglePlayer } = useGameStore.getState();
+      navigate(isSinglePlayer ? `/results/${gameId}` : `/voting/${gameId}`);
     } catch {
       setPopupMessage('Failed to submit outfit');
     } finally {
