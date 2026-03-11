@@ -2,12 +2,70 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { productApi } from '../services/api';
 
+const ONBOARDING_STEPS = [
+  {
+    step: '01',
+    title: 'Pick a Theme',
+    description: 'Choose from curated style challenges like Runway Ready, Streetwear Icon, or Beach Vacation.',
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+    ),
+  },
+  {
+    step: '02',
+    title: 'Build Your Outfit',
+    description: 'Browse real Shopbop products, mix and match up to 5 items, and stay within your budget.',
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <path d="M16 10a4 4 0 0 1-8 0"/>
+      </svg>
+    ),
+  },
+  {
+    step: '03',
+    title: 'Try It On with AI',
+    description: 'See your outfit on a virtual model. Upload your photo or generate an AI avatar that looks like you.',
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+    ),
+  },
+  {
+    step: '04',
+    title: 'AI Style Assistant',
+    description: 'Chat with our AI stylist for personalized recommendations. It searches Shopbop in real time.',
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+    ),
+  },
+  {
+    step: '05',
+    title: 'Vote & Win',
+    description: 'Rate your friends\' looks, see the final rankings, and share the results.',
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M8 21h8M12 17v4M17 4H7l-2 8h14l-2-8zM12 4V2"/>
+      </svg>
+    ),
+  },
+];
+
 function Home() {
   const navigate = useNavigate();
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [username, setUsername] = useState('');
   const [images, setImages] = useState([]);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
   const track1Ref = useRef(null);
   const track2Ref = useRef(null);
   const track3Ref = useRef(null);
@@ -61,6 +119,14 @@ function Home() {
       navigate(`/lobby/${joinCode}?username=${encodeURIComponent(username)}`);
     }
   };
+
+  const handleOnboardingClose = () => {
+    setShowOnboarding(false);
+    setOnboardingStep(0);
+  };
+
+  const currentStep = ONBOARDING_STEPS[onboardingStep];
+  const isLastStep = onboardingStep === ONBOARDING_STEPS.length - 1;
 
   return (
     <div className="home-container">
@@ -152,7 +218,74 @@ function Home() {
             </svg>
           </button>
         </div>
+
+        <button
+          onClick={() => setShowOnboarding(true)}
+          className="how-it-works-link"
+        >
+          How It Works
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M5 12h14M12 5l7 7-7 7" />
+          </svg>
+        </button>
       </div>
+
+      {/* Onboarding Modal */}
+      {showOnboarding && (
+        <div className="onboarding-overlay" onClick={handleOnboardingClose}>
+          <div className="onboarding-card" onClick={(e) => e.stopPropagation()}>
+            {/* Close button */}
+            <button className="onboarding-close" onClick={handleOnboardingClose}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+            </button>
+
+            {/* Step indicator */}
+            <div className="onboarding-step-indicator">
+              {ONBOARDING_STEPS.map((_, i) => (
+                <div
+                  key={i}
+                  className={`onboarding-dot ${i === onboardingStep ? 'active' : ''} ${i < onboardingStep ? 'done' : ''}`}
+                  onClick={() => setOnboardingStep(i)}
+                />
+              ))}
+            </div>
+
+            {/* Content */}
+            <div className="onboarding-icon">{currentStep.icon}</div>
+            <div className="onboarding-step-label">Step {currentStep.step}</div>
+            <h2 className="onboarding-title">{currentStep.title}</h2>
+            <p className="onboarding-description">{currentStep.description}</p>
+
+            {/* Navigation */}
+            <div className="onboarding-nav">
+              {onboardingStep > 0 ? (
+                <button
+                  className="btn btn-outline onboarding-btn"
+                  onClick={() => setOnboardingStep(s => s - 1)}
+                >
+                  Back
+                </button>
+              ) : (
+                <div />
+              )}
+              {isLastStep ? (
+                <button className="btn btn-primary onboarding-btn" onClick={handleOnboardingClose}>
+                  Get Started
+                </button>
+              ) : (
+                <button
+                  className="btn btn-primary onboarding-btn"
+                  onClick={() => setOnboardingStep(s => s + 1)}
+                >
+                  Next
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Join Modal */}
       {showJoinModal && (
