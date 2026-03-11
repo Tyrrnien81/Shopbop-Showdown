@@ -22,6 +22,9 @@ const useGameStore = create((set, get) => ({
   // User Photo (base64 data URL for personalized try-on)
   userPhoto: null,
 
+  // Tour State
+  tourActive: false,
+
   // Loading/Error States
   isLoading: false,
   error: null,
@@ -94,6 +97,10 @@ const useGameStore = create((set, get) => ({
   setError: (error) => set({ error }),
 
   clearError: () => set({ error: null }),
+
+  // Tour Actions
+  startTour: () => set({ tourActive: true }),
+  endTour: () => set({ tourActive: false }),
 
   // User Photo Actions
   setUserPhoto: (userPhoto) => set({ userPhoto }),
