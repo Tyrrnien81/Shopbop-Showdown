@@ -60,9 +60,25 @@ const TOUR_STEPS = [
     selector: '.chat-bubble',
     title: 'AI Style Assistant',
     description: 'Chat with our AI stylist for real-time outfit recommendations. It searches Shopbop for you.',
-    position: 'left',
+    position: 'top',
   },
 ];
+
+// Wait for a selector to appear in the DOM, resolves immediately if already present
+function waitForElement(selector, timeout = 3000) {
+  return new Promise((resolve) => {
+    const el = document.querySelector(selector);
+    if (el) { resolve(el); return; }
+
+    const observer = new MutationObserver(() => {
+      const found = document.querySelector(selector);
+      if (found) { observer.disconnect(); resolve(found); }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    setTimeout(() => { observer.disconnect(); resolve(document.querySelector(selector)); }, timeout);
+  });
+}
 
 export default function GuidedTour({ active, onClose }) {
   const navigate = useNavigate();
@@ -71,13 +87,12 @@ export default function GuidedTour({ active, onClose }) {
   const [targetRect, setTargetRect] = useState(null);
   const [demoGameId, setDemoGameId] = useState(null);
   const [transitioning, setTransitioning] = useState(false);
-  const observerRef = useRef(null);
+  const rafRef = useRef(null);
   const { setGame, setCurrentPlayer } = useGameStore();
 
   const currentStep = TOUR_STEPS[step];
   const totalSteps = TOUR_STEPS.length;
 
-  // Resolve route with gameId placeholder
   const resolveRoute = useCallback((route) => {
     if (route.includes(':gameId') && demoGameId) {
       return route.replace(':gameId', demoGameId);
@@ -85,61 +100,68 @@ export default function GuidedTour({ active, onClose }) {
     return route;
   }, [demoGameId]);
 
-  // Find and measure the target element
-  const measureTarget = useCallback(() => {
-    if (!currentStep) return;
-    const el = document.querySelector(currentStep.selector);
-    if (el) {
-      const rect = el.getBoundingClientRect();
-      setTargetRect({
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-      });
-      if (currentStep.scrollTo) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // Measure and spotlight a target element
+  const measure = useCallback((el) => {
+    if (!el) { setTargetRect(null); return; }
+    const rect = el.getBoundingClientRect();
+    setTargetRect({ top: rect.top, left: rect.left, width: rect.width, height: rect.height });
+  }, []);
+
+  // Core: navigate if needed, then wait for the element and measure it
+  useEffect(() => {
+    if (!active || !currentStep) return;
+    let cancelled = false;
+
+    const run = async () => {
+      const targetRoute = resolveRoute(currentStep.route);
+      const needsNav = location.pathname !== targetRoute;
+
+      if (needsNav) {
+        setTransitioning(true);
+        navigate(targetRoute);
+        // Give React one frame to start rendering the new route
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
       }
-    } else {
-      setTargetRect(null);
-    }
-  }, [currentStep]);
 
-  // Navigate to step's route if needed
+      const el = await waitForElement(currentStep.selector);
+      if (cancelled) return;
+
+      if (el && currentStep.scrollTo) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Small delay for scroll to settle
+        await new Promise(r => setTimeout(r, 120));
+      }
+
+      if (!cancelled) {
+        measure(el);
+        setTransitioning(false);
+      }
+    };
+
+    run();
+    return () => { cancelled = true; };
+  }, [step, active, currentStep, resolveRoute, location.pathname, navigate, measure]);
+
+  // Re-measure on scroll/resize using rAF for smooth updates
   useEffect(() => {
     if (!active || !currentStep) return;
 
-    const targetRoute = resolveRoute(currentStep.route);
-    if (location.pathname !== targetRoute) {
-      setTransitioning(true);
-      navigate(targetRoute);
-    }
-  }, [step, active, currentStep, resolveRoute, location.pathname, navigate]);
+    const handleUpdate = () => {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(() => {
+        const el = document.querySelector(currentStep.selector);
+        measure(el);
+      });
+    };
 
-  // Measure target after route change settles
-  useEffect(() => {
-    if (!active || !currentStep) return;
-
-    // Wait for DOM to render after navigation
-    const timer = setTimeout(() => {
-      measureTarget();
-      setTransitioning(false);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [step, active, location.pathname, measureTarget, currentStep]);
-
-  // Re-measure on scroll/resize
-  useEffect(() => {
-    if (!active) return;
-    const handleUpdate = () => measureTarget();
     window.addEventListener('scroll', handleUpdate, true);
     window.addEventListener('resize', handleUpdate);
     return () => {
+      cancelAnimationFrame(rafRef.current);
       window.removeEventListener('scroll', handleUpdate, true);
       window.removeEventListener('resize', handleUpdate);
     };
-  }, [active, measureTarget]);
+  }, [active, currentStep, measure]);
 
   // Create demo game when needed
   const createDemoGame = useCallback(async () => {
@@ -173,14 +195,10 @@ export default function GuidedTour({ active, onClose }) {
 
     const nextStep = TOUR_STEPS[step + 1];
 
-    // If next step needs a game, create one
     if (nextStep.route.includes(':gameId') && !demoGameId) {
       setTransitioning(true);
       const id = await createDemoGame();
-      if (!id) {
-        onClose();
-        return;
-      }
+      if (!id) { onClose(); return; }
       setTransitioning(false);
     }
 
@@ -198,48 +216,42 @@ export default function GuidedTour({ active, onClose }) {
 
   if (!active || !currentStep) return null;
 
-  // Calculate tooltip position
   const getTooltipStyle = () => {
     if (!targetRect) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
 
     const pad = 16;
+    const margin = 12; // min distance from viewport edge
+    const tooltipW = 360;
+    const tooltipH = 200; // approximate
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
     const pos = currentStep.position;
 
+    let top, left;
+
     if (pos === 'bottom') {
-      return {
-        top: `${targetRect.top + targetRect.height + pad}px`,
-        left: `${targetRect.left + targetRect.width / 2}px`,
-        transform: 'translateX(-50%)',
-      };
-    }
-    if (pos === 'top') {
-      return {
-        top: `${targetRect.top - pad}px`,
-        left: `${targetRect.left + targetRect.width / 2}px`,
-        transform: 'translate(-50%, -100%)',
-      };
-    }
-    if (pos === 'left') {
-      return {
-        top: `${targetRect.top + targetRect.height / 2}px`,
-        left: `${targetRect.left - pad}px`,
-        transform: 'translate(-100%, -50%)',
-      };
-    }
-    if (pos === 'right') {
-      return {
-        top: `${targetRect.top + targetRect.height / 2}px`,
-        left: `${targetRect.left + targetRect.width + pad}px`,
-        transform: 'translateY(-50%)',
-      };
+      top = targetRect.top + targetRect.height + pad;
+      left = targetRect.left + targetRect.width / 2 - tooltipW / 2;
+    } else if (pos === 'top') {
+      top = targetRect.top - pad - tooltipH;
+      left = targetRect.left + targetRect.width / 2 - tooltipW / 2;
+    } else if (pos === 'left') {
+      top = targetRect.top + targetRect.height / 2 - tooltipH / 2;
+      left = targetRect.left - pad - tooltipW;
+    } else if (pos === 'right') {
+      top = targetRect.top + targetRect.height / 2 - tooltipH / 2;
+      left = targetRect.left + targetRect.width + pad;
     }
 
-    return {};
+    // Clamp to viewport
+    left = Math.max(margin, Math.min(left, vw - tooltipW - margin));
+    top = Math.max(margin, Math.min(top, vh - tooltipH - margin));
+
+    return { top: `${top}px`, left: `${left}px` };
   };
 
   return (
     <div className="tour-overlay">
-      {/* Spotlight cutout using box-shadow trick */}
       {targetRect && (
         <div
           className="tour-spotlight"
@@ -252,7 +264,6 @@ export default function GuidedTour({ active, onClose }) {
         />
       )}
 
-      {/* Dark overlay with hole */}
       <svg className="tour-mask" width="100%" height="100%">
         <defs>
           <mask id="tour-hole">
@@ -277,7 +288,6 @@ export default function GuidedTour({ active, onClose }) {
         />
       </svg>
 
-      {/* Tooltip */}
       {!transitioning && (
         <div className="tour-tooltip" style={getTooltipStyle()}>
           <div className="tour-tooltip-step">
@@ -301,7 +311,6 @@ export default function GuidedTour({ active, onClose }) {
             </div>
           </div>
 
-          {/* Progress dots */}
           <div className="tour-dots">
             {TOUR_STEPS.map((_, i) => (
               <div
@@ -313,7 +322,6 @@ export default function GuidedTour({ active, onClose }) {
         </div>
       )}
 
-      {/* Loading state while transitioning */}
       {transitioning && (
         <div className="tour-loading">
           <div className="spinner" />

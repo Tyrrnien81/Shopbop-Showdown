@@ -2872,7 +2872,8 @@ input::placeholder {
   border-radius: 12px;
   box-shadow: 0 0 0 4px rgba(238, 74, 27, 0.35);
   pointer-events: none;
-  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease;
+  will-change: top, left, width, height;
 }
 
 .tour-tooltip {
@@ -2885,12 +2886,13 @@ input::placeholder {
   width: max-content;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
   pointer-events: auto;
-  animation: tourFadeIn 0.25s ease;
+  transition: top 0.2s ease, left 0.2s ease;
+  animation: tourFadeIn 0.15s ease;
 }
 
 @keyframes tourFadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .tour-tooltip-step {
