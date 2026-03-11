@@ -430,16 +430,16 @@ function Game() {
           <span className="game-theme-value">{theme}</span>
         </div>
 
+        <div className={`game-timer-header${timeRemaining <= 30 ? ' warning' : ''}`}>
+          <span className="game-timer-label">Time Left</span>
+          <span className="game-timer-value">{formatTime(timeRemaining)}</span>
+        </div>
+
         <div className="game-wallet">
           <span className="game-wallet-label">Wallet</span>
           <span className="game-wallet-value">${budgetRemaining.toLocaleString()}</span>
         </div>
       </header>
-
-      {/* Timer Overlay (shows when low) */}
-      {timeRemaining <= 30 && (
-        <div className="game-timer warning">{timeRemaining}</div>
-      )}
 
       <div className="game-content">
         {/* Products Panel */}

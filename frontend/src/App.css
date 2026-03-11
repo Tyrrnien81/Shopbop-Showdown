@@ -934,6 +934,33 @@ input::placeholder {
   font-weight: 700;
 }
 
+.game-timer-header {
+  text-align: right;
+}
+
+.game-timer-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.game-timer-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.game-timer-header.warning .game-timer-value {
+  color: var(--error);
+  animation: timerPulse 1s ease infinite;
+}
+
+@keyframes timerPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
 .game-content {
   display: flex;
   flex: 1;
