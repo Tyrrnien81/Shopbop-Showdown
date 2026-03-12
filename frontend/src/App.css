@@ -2525,6 +2525,88 @@ input::placeholder {
   color: white;
 }
 
+/* Live Voting Tracker */
+.vote-tracker {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px 18px;
+  max-width: 280px;
+  margin: 0 auto 24px;
+}
+
+.vote-tracker-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 10px;
+}
+
+.vote-tracker-header svg {
+  color: var(--primary-orange);
+}
+
+.vote-tracker-players {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.vote-tracker-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.4);
+  transition: color 0.3s;
+}
+
+.vote-tracker-player.done {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.vote-tracker-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+
+.vote-tracker-player.done .vote-tracker-dot {
+  background: #34D399;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+}
+
+.vote-tracker-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vote-tracker-player.done svg {
+  color: #34D399;
+  flex-shrink: 0;
+}
+
+.vote-tracker-pending {
+  font-size: 0.7rem;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.25);
+  animation: votePendingPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes votePendingPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
 /* Outfit Display for Voting */
 .voting-outfit-display {
   max-width: 750px;

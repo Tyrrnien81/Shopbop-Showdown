@@ -58,6 +58,7 @@ function Voting() {
   const [hoveredStar, setHoveredStar] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null); // seconds remaining in game
   const [revealing, setRevealing] = useState(true); // outfit reveal animation
+  const [voteStatus, setVoteStatus] = useState({ voted: 0, total: 0, players: [] });
 
   useEffect(() => {
     fetchOutfits();
@@ -84,6 +85,26 @@ function Voting() {
     })();
 
     return () => { if (interval) clearInterval(interval); };
+  }, [gameId]);
+
+  // Poll vote status from players endpoint
+  useEffect(() => {
+    const fetchVoteStatus = async () => {
+      try {
+        const response = await gameApi.getPlayers(gameId);
+        const playerList = response.data.players || [];
+        const voted = playerList.filter(p => p.hasVoted).length;
+        setVoteStatus({
+          voted,
+          total: playerList.length,
+          players: playerList.map(p => ({ name: p.username, voted: p.hasVoted })),
+        });
+      } catch { /* ignore */ }
+    };
+
+    fetchVoteStatus();
+    const poll = setInterval(fetchVoteStatus, 3000);
+    return () => clearInterval(poll);
   }, [gameId]);
 
   const handleGoBack = () => {
@@ -247,6 +268,34 @@ function Voting() {
           </button>
         )}
       </header>
+
+      {/* Live Voting Tracker */}
+      {voteStatus.total > 1 && (
+        <div className="vote-tracker">
+          <div className="vote-tracker-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+            <span>{voteStatus.voted}/{voteStatus.total} Votes In</span>
+          </div>
+          <div className="vote-tracker-players">
+            {voteStatus.players.map((p, i) => (
+              <div key={i} className={`vote-tracker-player ${p.voted ? 'done' : ''}`}>
+                <span className="vote-tracker-dot" />
+                <span className="vote-tracker-name">{p.name}</span>
+                {p.voted ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <span className="vote-tracker-pending">voting...</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="error-message" style={{ maxWidth: '600px', margin: '0 auto 24px' }}>
