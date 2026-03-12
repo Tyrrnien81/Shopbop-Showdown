@@ -271,6 +271,7 @@ app.get('/api/products/search', async (req, res) => {
     } else if (category) {
       // Category-specific search — fire one search per keyword for reliability
       const cat = CATEGORIES.find(c => c.id === category.toLowerCase() || c.name.toLowerCase() === category.toLowerCase());
+      const categoryName = cat ? cat.name : category;
       const queries = cat ? cat.queries : [category];
       const perQueryLimit = Math.max(Math.ceil(limitNum / queries.length), 8);
 
@@ -281,6 +282,8 @@ app.get('/api/products/search', async (req, res) => {
       );
       const results = await Promise.all(fetches);
       products = results.flat();
+      // Override category to match what was requested (guessCategory can misclassify)
+      products = products.map(p => ({ ...p, category: categoryName }));
       // Deduplicate by productSin
       const seen = new Set();
       products = products.filter(p => {

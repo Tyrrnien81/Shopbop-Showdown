@@ -1056,6 +1056,21 @@ function Game() {
             </div>
 
             <div className="tryon-modal-footer">
+              {generatedImages.some(img => img) && (
+                <button
+                  className="btn btn-outline"
+                  onClick={() => {
+                    setGeneratedImages([null, null, null]);
+                    setSelectedImage(null);
+                    setGenerationError(null);
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M19 12H5M12 19l-7-7 7-7" />
+                  </svg>
+                  Change Photo
+                </button>
+              )}
               <button
                 className="btn btn-outline"
                 onClick={handleGenerateAll}
