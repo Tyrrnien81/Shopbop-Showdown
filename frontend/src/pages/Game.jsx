@@ -73,6 +73,9 @@ function Game() {
   // Chat-featured products shown in main grid
   const [chatFeatured, setChatFeatured] = useState([]);
 
+  // Wallet spend animation
+  const [walletSpend, setWalletSpend] = useState(false);
+
   // Chat assistant state
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([
@@ -402,6 +405,9 @@ function Game() {
         setSelectedProducts((prev) => new Set([...prev, product.productSin]));
         // Clear selected image when outfit changes
         setSelectedImage(null);
+        // Trigger wallet spend animation
+        setWalletSpend(true);
+        setTimeout(() => setWalletSpend(false), 600);
       }
     }
   };
@@ -449,9 +455,18 @@ function Game() {
           </span>
         </div>
 
-        <div className="game-wallet">
+        <div className={`game-wallet${walletSpend ? ' spending' : ''}`}>
           <span className="game-wallet-label">Wallet</span>
-          <span className="game-wallet-value">${budgetRemaining.toLocaleString()}</span>
+          <span className="game-wallet-value">
+            <svg className="wallet-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 7c0-1.1.9-2 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7z" />
+              <path d="M2 7h20" />
+              <path d="M16 14a1 1 0 1 0 2 0 1 1 0 0 0-2 0" />
+              <path d="M2 11h4" />
+            </svg>
+            ${budgetRemaining.toLocaleString()}
+          </span>
+          {walletSpend && <span className="wallet-spend-fly">-$</span>}
         </div>
       </header>
 

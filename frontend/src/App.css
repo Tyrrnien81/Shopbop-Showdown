@@ -924,6 +924,61 @@ input::placeholder {
   display: flex;
   flex-direction: column;
   text-align: right;
+  position: relative;
+}
+
+.game-wallet-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.wallet-icon {
+  flex-shrink: 0;
+  transition: transform 0.3s ease;
+}
+
+.game-wallet.spending .wallet-icon {
+  animation: walletOpen 0.6s ease;
+}
+
+.game-wallet.spending .game-wallet-value {
+  animation: walletShake 0.6s ease;
+}
+
+.wallet-spend-fly {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--error);
+  pointer-events: none;
+  animation: moneyFly 0.6s ease forwards;
+}
+
+@keyframes walletOpen {
+  0% { transform: scale(1); }
+  20% { transform: scale(1.15) rotate(-5deg); }
+  40% { transform: scale(0.9) rotate(3deg); }
+  60% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+@keyframes walletShake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-3px); }
+  30% { transform: translateX(3px); }
+  45% { transform: translateX(-2px); }
+  60% { transform: translateX(2px); }
+}
+
+@keyframes moneyFly {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateY(-30px) scale(0.6); }
 }
 
 .game-wallet-label {
@@ -933,10 +988,6 @@ input::placeholder {
   color: var(--text-muted);
 }
 
-.game-wallet-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-}
 
 .game-timer-header {
   display: flex;
@@ -973,6 +1024,7 @@ input::placeholder {
 .game-timer-header.warning .game-timer-value {
   color: var(--error);
   animation: timerPulse 1s ease infinite;
+  animation-fill-mode: forwards;
 }
 
 @keyframes alarmShake {
@@ -984,8 +1036,8 @@ input::placeholder {
 }
 
 @keyframes timerPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%, 100% { color: var(--error); }
+  50% { color: #ff6b6b; }
 }
 
 .game-content {
@@ -2001,28 +2053,6 @@ input::placeholder {
 }
 
 /* Timer */
-.game-timer {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 6rem;
-  font-weight: 900;
-  color: var(--primary-orange);
-  opacity: 0;
-  pointer-events: none;
-  z-index: 100;
-}
-
-.game-timer.warning {
-  animation: timerPulse 1s ease-in-out;
-}
-
-@keyframes timerPulse {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-  50% { opacity: 0.3; transform: translate(-50%, -50%) scale(1); }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.2); }
-}
 
 /* ============================================
    VOTING PAGE
