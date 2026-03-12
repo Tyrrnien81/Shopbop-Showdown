@@ -211,6 +211,32 @@ function Voting() {
           <div className="spinner" style={{ borderColor: 'rgba(255,255,255,0.2)', borderTopColor: 'var(--primary-orange)' }}></div>
           <h2>Vote Submitted!</h2>
           <p style={{ color: 'rgba(255,255,255,0.6)' }}>Waiting for other players to vote...</p>
+          {voteStatus.total > 1 && (
+            <div className="vote-tracker" style={{ marginTop: '24px' }}>
+              <div className="vote-tracker-header">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+                <span>{voteStatus.voted}/{voteStatus.total} Players Voted</span>
+              </div>
+              <div className="vote-tracker-players">
+                {voteStatus.players.map((p, i) => (
+                  <div key={i} className={`vote-tracker-player ${p.voted ? 'done' : ''}`}>
+                    <span className="vote-tracker-dot" />
+                    <span className="vote-tracker-name">{p.name}</span>
+                    {p.voted ? (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : (
+                      <span className="vote-tracker-pending">voting...</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
