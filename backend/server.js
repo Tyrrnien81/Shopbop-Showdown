@@ -66,8 +66,8 @@ const THEME_QUERIES = {
   beach: 'swimwear resort beach dress',
 };
 
-// Category ID → display name mapping
-const CATEGORIES = [
+// Category ID → display name mapping (per gender)
+const CATEGORIES_WOMENS = [
   { id: 'dresses', name: 'Dresses', queries: ['dresses'] },
   { id: 'tops', name: 'Tops', queries: ['tops', 'blouses', 'shirts'] },
   { id: 'bottoms', name: 'Bottoms', queries: ['pants', 'jeans', 'skirts'] },
@@ -76,6 +76,19 @@ const CATEGORIES = [
   { id: 'outerwear', name: 'Outerwear', queries: ['jackets', 'coats', 'blazers'] },
   { id: 'accessories', name: 'Accessories', queries: ['bags', 'scarves', 'hats'] },
 ];
+
+const CATEGORIES_MENS = [
+  { id: 'tops', name: 'Tops', queries: ['shirts', 'tees', 'polos'] },
+  { id: 'bottoms', name: 'Bottoms', queries: ['pants', 'jeans', 'shorts', 'trousers'] },
+  { id: 'shoes', name: 'Shoes', queries: ['sneakers', 'boots', 'loafers'] },
+  { id: 'outerwear', name: 'Outerwear', queries: ['jackets', 'coats', 'blazers', 'hoodies'] },
+  { id: 'suits', name: 'Suits', queries: ['suits', 'blazers', 'dress shirts'] },
+  { id: 'accessories', name: 'Accessories', queries: ['watches', 'bags', 'belts', 'hats'] },
+];
+
+function getCategories(dept) {
+  return dept === 'MENS' ? CATEGORIES_MENS : CATEGORIES_WOMENS;
+}
 
 // ============================================================
 // SHOPBOP API PROXY HELPERS
@@ -185,11 +198,12 @@ function normalizeProduct(item) {
 }
 
 // Search Shopbop and return normalized products
-async function searchShopbop(query, limit = 20, offset = 0, { sort, minPrice, maxPrice } = {}) {
+async function searchShopbop(query, limit = 20, offset = 0, { sort, minPrice, maxPrice, dept } = {}) {
   const params = { q: query, limit, offset };
   if (sort) params.sort = sort;
   if (minPrice) params.minPrice = minPrice;
   if (maxPrice) params.maxPrice = maxPrice;
+  if (dept) params.dept = dept;
   const data = await shopbopFetch('/public/search', params);
   const rawProducts = data.products || data.results || data.items || [];
   if (rawProducts.length > 0) {
@@ -217,50 +231,59 @@ app.get('/api/health', (req, res) => {
 
 // GET /api/categories — static category list
 app.get('/api/categories', (req, res) => {
+  const dept = req.query.dept === 'MENS' ? 'MENS' : 'WOMENS';
+  const cats = getCategories(dept);
   res.json({
-    categories: CATEGORIES.map(({ id, name }) => ({ id, name })),
+    categories: cats.map(({ id, name }) => ({ id, name })),
   });
 });
 
 // GET /api/products/search
 app.get('/api/products/search', async (req, res) => {
   try {
-    const { query, category, minPrice, maxPrice, page = 1, limit = 20, theme, sort, color } = req.query;
+    const { query, category, minPrice, maxPrice, page = 1, limit = 20, theme, sort, color, dept } = req.query;
     const pageNum = parseInt(page);
     const limitNum = Math.min(parseInt(limit), 50);
     const offset = (pageNum - 1) * limitNum;
+    const activeDept = dept === 'MENS' ? 'MENS' : 'WOMENS';
+    const CATEGORIES = getCategories(activeDept);
 
     // Build options to forward to the Shopbop API
-    const opts = {};
+    const opts = { dept: activeDept };
     if (sort) opts.sort = sort;
     if (minPrice) opts.minPrice = minPrice;
     if (maxPrice) opts.maxPrice = maxPrice;
 
     // Color is prepended to the search query text (no native colors param)
     const colorPrefix = color && color !== 'All' ? `${color} ` : '';
+    // Gender prefix to steer text search toward men's or women's products
+    const genderPrefix = activeDept === 'MENS' ? 'mens ' : '';
 
     let products = [];
     let total = 0;
 
     if (query) {
       // Direct text search
-      const result = await searchShopbop(`${colorPrefix}${query}`, limitNum, offset, opts);
+      const result = await searchShopbop(`${genderPrefix}${colorPrefix}${query}`, limitNum, offset, opts);
       products = result.products;
       total = result.total;
 
     } else if (category) {
       // Category-specific search — fire one search per keyword for reliability
       const cat = CATEGORIES.find(c => c.id === category.toLowerCase() || c.name.toLowerCase() === category.toLowerCase());
+      const categoryName = cat ? cat.name : category;
       const queries = cat ? cat.queries : [category];
       const perQueryLimit = Math.max(Math.ceil(limitNum / queries.length), 8);
 
       const fetches = queries.map(q =>
-        searchShopbop(`${colorPrefix}${q}`, perQueryLimit, offset, opts)
+        searchShopbop(`${genderPrefix}${colorPrefix}${q}`, perQueryLimit, offset, opts)
           .then(r => r.products)
           .catch(() => [])
       );
       const results = await Promise.all(fetches);
       products = results.flat();
+      // Override category to match what was requested (guessCategory can misclassify)
+      products = products.map(p => ({ ...p, category: categoryName }));
       // Deduplicate by productSin
       const seen = new Set();
       products = products.filter(p => {
@@ -276,7 +299,7 @@ app.get('/api/products/search', async (req, res) => {
       const perCategoryLimit = Math.ceil(limitNum / CATEGORIES.length);
 
       const fetches = CATEGORIES.map(cat =>
-        searchShopbop(`${colorPrefix}${themeQuery} ${cat.queries[0]}`, perCategoryLimit, 0, opts)
+        searchShopbop(`${genderPrefix}${colorPrefix}${themeQuery} ${cat.queries[0]}`, perCategoryLimit, 0, opts)
           .then(r => r.products)
           .catch(() => [])
       );
@@ -286,7 +309,7 @@ app.get('/api/products/search', async (req, res) => {
 
     } else {
       // General fashion search fallback
-      const result = await searchShopbop(`${colorPrefix}fashion`, limitNum, offset, opts);
+      const result = await searchShopbop(`${genderPrefix}${colorPrefix}fashion`, limitNum, offset, opts);
       products = result.products;
       total = result.total;
     }
@@ -321,7 +344,7 @@ app.get('/api/products/:productSin', async (req, res) => {
 
 // POST /api/games — create a new game
 app.post('/api/games', (req, res) => {
-  const { hostUsername, theme, budget, maxPlayers, timeLimit } = req.body;
+  const { hostUsername, theme, budget, maxPlayers, timeLimit, singlePlayer } = req.body;
 
   if (!hostUsername || !theme) {
     return res.status(400).json({ error: 'hostUsername and theme are required' });
@@ -356,6 +379,7 @@ app.post('/api/games', (req, res) => {
     startedAt: null,
     endsAt: null,
     endedAt: null,
+    singlePlayer: Boolean(singlePlayer),
   };
 
   games.set(gameId, game);
@@ -454,7 +478,19 @@ app.post('/api/outfits', (req, res) => {
 
   const player = players.get(playerId);
   if (!player || player.gameId !== gameId) return res.status(404).json({ error: 'Player not found in this game' });
-  if (player.hasSubmitted) return res.status(400).json({ error: 'Outfit already submitted' });
+
+  // Allow re-submission: update existing outfit if player already submitted
+  if (player.hasSubmitted && player.outfitId) {
+    const existingOutfit = outfits.get(player.outfitId);
+    if (existingOutfit) {
+      existingOutfit.products = outfitProducts || [];
+      existingOutfit.totalPrice = totalPrice || 0;
+      existingOutfit.tryOnImage = tryOnImage || null;
+      existingOutfit.submittedAt = new Date().toISOString();
+      console.log(`Outfit ${player.outfitId} re-submitted by player ${playerId}`);
+      return res.status(200).json({ outfitId: player.outfitId, submittedAt: existingOutfit.submittedAt });
+    }
+  }
 
   const outfitId = generateId();
   const outfit = {
@@ -471,11 +507,17 @@ app.post('/api/outfits', (req, res) => {
   player.hasSubmitted = true;
   player.outfitId = outfitId;
 
-  // Auto-advance to VOTING if all players submitted
+  // Auto-advance when all players have submitted
   const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
   if (gamePlayers.every(p => p.hasSubmitted)) {
-    game.status = 'VOTING';
-    console.log(`Game ${gameId} moved to VOTING phase`);
+    if (game.singlePlayer) {
+      game.status = 'COMPLETED';
+      game.endedAt = new Date().toISOString();
+      console.log(`Solo game ${gameId} completed (skipping voting)`);
+    } else {
+      game.status = 'VOTING';
+      console.log(`Game ${gameId} moved to VOTING phase`);
+    }
   }
 
   console.log(`Outfit ${outfitId} submitted by player ${playerId}`);
@@ -497,6 +539,7 @@ app.get('/api/games/:gameId/outfits', (req, res) => {
         outfitId: outfit.outfitId,
         products: outfit.products,
         totalPrice: outfit.totalPrice,
+        tryOnImage: outfit.tryOnImage || null,
       });
     } else {
       // Include player info for completed games
@@ -507,6 +550,7 @@ app.get('/api/games/:gameId/outfits', (req, res) => {
         playerName: player?.username,
         products: outfit.products,
         totalPrice: outfit.totalPrice,
+        tryOnImage: outfit.tryOnImage || null,
       });
     }
   }
@@ -586,6 +630,19 @@ app.get('/api/games/:gameId/results', (req, res) => {
       tryOnImage: outfit.tryOnImage || null,
     };
   });
+
+  // Single-player: generate a synthetic style score
+  if (game.singlePlayer) {
+    results.forEach(r => {
+      const itemCount = r.products.length;
+      const budgetEfficiency = Math.min(r.totalPrice / game.budget, 1);
+      const categorySet = new Set(r.products.map(p => p.category));
+      const variety = categorySet.size;
+      // Score: reward variety (up to 5 categories) and budget usage
+      r.score = parseFloat(Math.min((variety * 0.7 + budgetEfficiency * 1.5 + itemCount * 0.2), 5).toFixed(1));
+      r.totalVotes = 1;
+    });
+  }
 
   results.sort((a, b) => b.score - a.score || b.totalVotes - a.totalVotes);
   results.forEach((r, i) => { r.rank = i + 1; });
