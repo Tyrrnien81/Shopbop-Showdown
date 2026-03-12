@@ -560,6 +560,34 @@ input::placeholder {
   letter-spacing: 0.05em;
 }
 
+/* Gender Toggle (inline in game filters) */
+.gender-toggle-inline {
+  display: flex;
+  border: 1px solid var(--border-medium);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.gender-btn {
+  padding: 4px 14px;
+  border: none;
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-light);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.gender-btn.active {
+  background: var(--primary-orange);
+  color: white;
+}
+
+.gender-btn:hover:not(.active) {
+  background: var(--bg-warm);
+}
+
 /* Room Members Sidebar */
 .room-members-sidebar {
   width: 240px;

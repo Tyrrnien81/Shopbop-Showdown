@@ -52,6 +52,8 @@ function Game() {
   const [validationErrors, setValidationErrors] = useState([]);
 
   // Filter state
+  const [gender, setGender] = useState('womens');
+  const dept = gender === 'mens' ? 'MENS' : 'WOMENS';
   const [sortBy, setSortBy] = useState('');
   const [selectedColor, setSelectedColor] = useState('All');
   const [minPrice, setMinPrice] = useState('');
@@ -143,12 +145,14 @@ function Game() {
   // Load products from ShopBop catalog (re-fetches when filters change)
   useEffect(() => {
     let stale = false;
-    const CATEGORIES_TO_FETCH = ['Dresses', 'Tops', 'Bottoms', 'Shoes', 'Jewelry', 'Outerwear', 'Accessories'];
+    const CATEGORIES_TO_FETCH = gender === 'mens'
+      ? ['Tops', 'Bottoms', 'Shoes', 'Outerwear', 'Suits', 'Accessories']
+      : ['Dresses', 'Tops', 'Bottoms', 'Shoes', 'Jewelry', 'Outerwear', 'Accessories'];
 
     const fetchProducts = async () => {
       setLoadingProducts(true);
       try {
-        const filterParams = { limit: 10, theme };
+        const filterParams = { limit: 10, theme, dept };
         if (sortBy) filterParams.sort = sortBy;
         if (selectedColor && selectedColor !== 'All') filterParams.color = selectedColor;
         if (appliedMinPrice) filterParams.minPrice = appliedMinPrice;
@@ -185,7 +189,7 @@ function Game() {
 
     fetchProducts();
     return () => { stale = true; };
-  }, [theme, sortBy, appliedMinPrice, appliedMaxPrice, selectedColor]);
+  }, [theme, sortBy, appliedMinPrice, appliedMaxPrice, selectedColor, gender, dept]);
 
   // Get categories in current outfit
   const getOutfitCategories = useCallback(() => {
@@ -215,28 +219,33 @@ function Game() {
       errors.push('Missing: Shoes');
     }
 
-    // Check for jewelry
-    if (!categories.has('Jewelry')) {
-      errors.push('Missing: Jewelry');
-    }
+    if (gender === 'mens') {
+      // Men's validation: need tops + bottoms
+      if (!categories.has('Tops')) errors.push('Missing: Top');
+      if (!categories.has('Bottoms')) errors.push('Missing: Bottoms');
+    } else {
+      // Women's validation
+      if (!categories.has('Jewelry')) {
+        errors.push('Missing: Jewelry');
+      }
 
-    // Check for body coverage - either dress OR (tops + bottoms)
-    const hasDress = categories.has('Dresses');
-    const hasTops = categories.has('Tops');
-    const hasBottoms = categories.has('Bottoms');
+      const hasDress = categories.has('Dresses');
+      const hasTops = categories.has('Tops');
+      const hasBottoms = categories.has('Bottoms');
 
-    if (!hasDress && !(hasTops && hasBottoms)) {
-      if (!hasDress && !hasTops && !hasBottoms) {
-        errors.push('Missing: Dress OR Top + Bottoms');
-      } else if (hasTops && !hasBottoms) {
-        errors.push('Missing: Bottoms (or choose a Dress instead)');
-      } else if (hasBottoms && !hasTops) {
-        errors.push('Missing: Top (or choose a Dress instead)');
+      if (!hasDress && !(hasTops && hasBottoms)) {
+        if (!hasDress && !hasTops && !hasBottoms) {
+          errors.push('Missing: Dress OR Top + Bottoms');
+        } else if (hasTops && !hasBottoms) {
+          errors.push('Missing: Bottoms (or choose a Dress instead)');
+        } else if (hasBottoms && !hasTops) {
+          errors.push('Missing: Top (or choose a Dress instead)');
+        }
       }
     }
 
     return errors;
-  }, [getOutfitCategories]);
+  }, [getOutfitCategories, gender]);
 
   // Update validation errors when outfit changes
   useEffect(() => {
@@ -475,12 +484,30 @@ function Game() {
         <main className="products-panel">
           <div className="products-header">
             <h2>Curated Pieces for {theme}</h2>
-            <p>Click items to add them to your board. Time remaining: {formatTime(timeRemaining)}</p>
+            <p>Click items to add them to your board.</p>
           </div>
 
-          {/* Category filter tabs */}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid var(--border-light)' }}>
-            {['All', 'Dresses', 'Tops', 'Bottoms', 'Shoes', 'Jewelry', 'Outerwear', 'Accessories'].map(cat => (
+          {/* Gender + Category filter tabs */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid var(--border-light)', alignItems: 'center' }}>
+            <div className="gender-toggle-inline">
+              <button
+                className={`gender-btn${gender === 'womens' ? ' active' : ''}`}
+                onClick={() => { setGender('womens'); setSelectedCategory('All'); }}
+              >
+                Women's
+              </button>
+              <button
+                className={`gender-btn${gender === 'mens' ? ' active' : ''}`}
+                onClick={() => { setGender('mens'); setSelectedCategory('All'); }}
+              >
+                Men's
+              </button>
+            </div>
+            <div style={{ width: '1px', height: '20px', background: 'var(--border-medium)', margin: '0 4px' }} />
+            {['All', ...(gender === 'mens'
+              ? ['Tops', 'Bottoms', 'Shoes', 'Outerwear', 'Suits', 'Accessories']
+              : ['Dresses', 'Tops', 'Bottoms', 'Shoes', 'Jewelry', 'Outerwear', 'Accessories']
+            )].map(cat => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
