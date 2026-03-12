@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { generateTryOnImage, generateSingleTryOnImage } from '../services/geminiApi';
-import { productApi, outfitApi, chatApi } from '../services/api';
+import { productApi, outfitApi, chatApi, avatarApi } from '../services/api';
 import useGameStore from '../store/gameStore';
 
 // Sort options supported by the Shopbop API
@@ -39,9 +39,11 @@ function Game() {
     game,
     currentOutfit,
     userPhoto,
+    setUserPhoto,
     addProductToOutfit,
     removeProductFromOutfit,
     setLoading,
+    isSinglePlayer,
   } = useGameStore();
 
   const [timeRemaining, setTimeRemaining] = useState(game?.timeLimit || 300);
@@ -63,11 +65,19 @@ function Game() {
 
   // Virtual try-on modal state
   const [showModal, setShowModal] = useState(false);
-  const [generatedImages, setGeneratedImages] = useState([null, null, null]); // 3 slots
-  const [loadingImages, setLoadingImages] = useState([false, false, false]); // Loading state per image
+  const [generatedImages, setGeneratedImages] = useState([null, null, null]);
+  const [loadingImages, setLoadingImages] = useState([false, false, false]);
   const [selectedImage, setSelectedImage] = useState(null);
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [generationError, setGenerationError] = useState(null);
+
+  // Avatar generation state (for photo section in try-on modal)
+  const [photoTab, setPhotoTab] = useState('upload');
+  const [avatarForm, setAvatarForm] = useState({
+    gender: '', ethnicity: '', height: '', waistSize: '', topSize: '',
+  });
+  const [generatingAvatar, setGeneratingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState(null);
 
   // Popup notification state
   const [popupMessage, setPopupMessage] = useState(null);
@@ -86,6 +96,7 @@ function Game() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const chatMessagesRef = useRef(null);
+  const photoInputRef = useRef(null);
 
   const budget = game?.budget || 5000;
   const theme = game?.theme || 'Runway Ready';
@@ -251,6 +262,35 @@ function Game() {
   useEffect(() => {
     setValidationErrors(validateOutfit());
   }, [currentOutfit.products, validateOutfit]);
+
+  // Photo upload for single player mode (skips lobby)
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setUserPhoto(reader.result);
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemovePhoto = () => {
+    setUserPhoto(null);
+    if (photoInputRef.current) photoInputRef.current.value = '';
+  };
+
+  const handleGenerateAvatar = async () => {
+    setGeneratingAvatar(true);
+    setAvatarError(null);
+    try {
+      const res = await avatarApi.generate(avatarForm);
+      const { base64, mimeType } = res.data;
+      setUserPhoto(`data:${mimeType};base64,${base64}`);
+      setPhotoTab('upload');
+    } catch (err) {
+      setAvatarError(err.response?.data?.error || 'Failed to generate avatar');
+    } finally {
+      setGeneratingAvatar(false);
+    }
+  };
 
   // Open modal — auto-generate if user has a photo set
   const handleOpenModal = () => {
@@ -734,9 +774,17 @@ function Game() {
                 style={{ width: `${Math.min(budgetPercentage, 100)}%` }}
               />
             </div>
+            {!isOutfitComplete && validationErrors.length > 0 && (
+              <div className="outfit-needs">
+                <span className="outfit-needs-label">Need:</span>
+                {validationErrors.map((err, i) => (
+                  <span key={i} className="outfit-needs-tag">{err.replace('Missing: ', '')}</span>
+                ))}
+              </div>
+            )}
             <button
               onClick={handleSubmitOutfit}
-              className="btn btn-primary"
+              className={`btn btn-primary${isOutfitComplete ? ' ready' : ''}`}
               disabled={!isOutfitComplete}
             >
               {isOutfitComplete ? 'Submit Look' : 'Complete Outfit First'}
@@ -854,14 +902,104 @@ function Game() {
                 </div>
               ) : !generatedImages.some(img => img) && !isGeneratingAll && !loadingImages.some(l => l) ? (
                 <div className="tryon-modal-empty">
-                  <div className="tryon-empty-icon">
-                    <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                      <circle cx="12" cy="7" r="4"/>
-                    </svg>
+                  {/* Photo / Avatar section */}
+                  <div className="tryon-photo-section">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={photoInputRef}
+                      onChange={handlePhotoUpload}
+                      style={{ display: 'none' }}
+                    />
+
+                    {userPhoto ? (
+                      <div className="tryon-photo-preview">
+                        <img src={userPhoto} alt="Your photo" />
+                        <button className="tryon-photo-remove" onClick={handleRemovePhoto} title="Remove photo">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Tabs */}
+                        <div className="tryon-photo-tabs">
+                          <button
+                            className={`tryon-tab${photoTab === 'upload' ? ' active' : ''}`}
+                            onClick={() => setPhotoTab('upload')}
+                          >
+                            Upload Photo
+                          </button>
+                          <button
+                            className={`tryon-tab${photoTab === 'ai' ? ' active' : ''}`}
+                            onClick={() => setPhotoTab('ai')}
+                          >
+                            AI Generate
+                          </button>
+                        </div>
+
+                        {photoTab === 'upload' ? (
+                          <button className="tryon-photo-btn" onClick={() => photoInputRef.current?.click()}>
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                              <circle cx="8.5" cy="8.5" r="1.5"/>
+                              <polyline points="21 15 16 10 5 21"/>
+                            </svg>
+                            <span>Upload Your Photo</span>
+                            <span className="tryon-photo-hint">So the model looks like you!</span>
+                          </button>
+                        ) : (
+                          <div className="tryon-avatar-form">
+                            <p className="tryon-avatar-desc">Describe yourself and we'll generate a model that looks like you</p>
+                            <div className="tryon-avatar-grid">
+                              <div className="tryon-avatar-field">
+                                <label>Gender</label>
+                                <select value={avatarForm.gender} onChange={e => setAvatarForm(f => ({ ...f, gender: e.target.value }))}>
+                                  <option value="">Any</option>
+                                  <option value="woman">Woman</option>
+                                  <option value="man">Man</option>
+                                  <option value="non-binary person">Non-binary</option>
+                                </select>
+                              </div>
+                              <div className="tryon-avatar-field">
+                                <label>Ethnicity</label>
+                                <input type="text" placeholder="e.g. South Asian" value={avatarForm.ethnicity} onChange={e => setAvatarForm(f => ({ ...f, ethnicity: e.target.value }))} />
+                              </div>
+                              <div className="tryon-avatar-field">
+                                <label>Height</label>
+                                <input type="text" placeholder="e.g. 5ft 6in" value={avatarForm.height} onChange={e => setAvatarForm(f => ({ ...f, height: e.target.value }))} />
+                              </div>
+                              <div className="tryon-avatar-field">
+                                <label>Top Size</label>
+                                <select value={avatarForm.topSize} onChange={e => setAvatarForm(f => ({ ...f, topSize: e.target.value }))}>
+                                  <option value="">Any</option>
+                                  <option value="XS">XS</option>
+                                  <option value="S">S</option>
+                                  <option value="M">M</option>
+                                  <option value="L">L</option>
+                                  <option value="XL">XL</option>
+                                  <option value="XXL">XXL</option>
+                                </select>
+                              </div>
+                              <div className="tryon-avatar-field full-width">
+                                <label>Waist Size</label>
+                                <input type="text" placeholder="e.g. 28 or 71cm" value={avatarForm.waistSize} onChange={e => setAvatarForm(f => ({ ...f, waistSize: e.target.value }))} />
+                              </div>
+                            </div>
+                            {avatarError && <p className="tryon-avatar-error">{avatarError}</p>}
+                            <button onClick={handleGenerateAvatar} disabled={generatingAvatar} className="btn btn-primary tryon-avatar-btn">
+                              {generatingAvatar ? 'Generating...' : 'Generate My Avatar'}
+                            </button>
+                            <p className="tryon-avatar-note">All fields optional — more detail = better match</p>
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
+
                   <h3>Ready to Generate</h3>
-                  <p>Click the button below to create 3 AI-generated outfit previews</p>
+                  <p>{userPhoto ? 'Your photo is set! Generate 3 AI outfit previews.' : 'Upload a photo or generate an avatar, then create your looks.'}</p>
                   <button onClick={handleGenerateAll} className="btn btn-primary generate-looks-btn">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
