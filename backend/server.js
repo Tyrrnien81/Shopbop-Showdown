@@ -193,7 +193,9 @@ function normalizeProduct(item) {
     category,
     price,
     imageUrl,
-    productUrl: `https://www.shopbop.com/dp/${productSin}`,
+    productUrl: p.productDetailUrl
+      ? `https://www.shopbop.com${p.productDetailUrl}`
+      : `https://www.shopbop.com/dp/${productSin}`,
   };
 }
 
