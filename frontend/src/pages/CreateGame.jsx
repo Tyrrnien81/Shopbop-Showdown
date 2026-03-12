@@ -129,6 +129,29 @@ function CreateGame() {
             </div>
           </div>
 
+          {/* Time Limit Selector */}
+          <div className="time-limit-section">
+            <span className="time-limit-label">Time Limit</span>
+            <div className="time-limit-options">
+              {[
+                { value: 120, label: '2 min', desc: 'Speed Round' },
+                { value: 300, label: '5 min', desc: 'Standard' },
+                { value: 600, label: '10 min', desc: 'Relaxed' },
+                { value: 900, label: '15 min', desc: 'Curate' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`time-limit-btn ${formData.timeLimit === opt.value ? 'selected' : ''}`}
+                  onClick={() => setFormData(prev => ({ ...prev, timeLimit: opt.value }))}
+                >
+                  <span className="time-limit-btn-value">{opt.label}</span>
+                  <span className="time-limit-btn-desc">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Solo Mode Toggle */}
           <div style={{
             display: 'flex',
