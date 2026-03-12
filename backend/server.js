@@ -447,7 +447,7 @@ app.get('/api/games/:gameId/players', (req, res) => {
 
 // POST /api/outfits — submit outfit
 app.post('/api/outfits', (req, res) => {
-  const { gameId, playerId, products: outfitProducts, totalPrice } = req.body;
+  const { gameId, playerId, products: outfitProducts, totalPrice, tryOnImage } = req.body;
 
   const game = games.get(gameId);
   if (!game) return res.status(404).json({ error: 'Game not found' });
@@ -463,6 +463,7 @@ app.post('/api/outfits', (req, res) => {
     playerId,
     products: outfitProducts || [],
     totalPrice: totalPrice || 0,
+    tryOnImage: tryOnImage || null,
     submittedAt: new Date().toISOString(),
   };
 
@@ -582,6 +583,7 @@ app.get('/api/games/:gameId/results', (req, res) => {
       totalVotes: count,
       products: outfit.products,
       totalPrice: outfit.totalPrice,
+      tryOnImage: outfit.tryOnImage || null,
     };
   });
 
