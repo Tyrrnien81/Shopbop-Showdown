@@ -432,7 +432,21 @@ function Game() {
 
         <div className={`game-timer-header${timeRemaining <= 30 ? ' warning' : ''}`}>
           <span className="game-timer-label">Time Left</span>
-          <span className="game-timer-value">{formatTime(timeRemaining)}</span>
+          <span className="game-timer-value">
+            <svg className="timer-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {/* Bell tops */}
+              <path d="M4 4 L7.5 7" />
+              <path d="M20 4 L16.5 7" />
+              {/* Clock body */}
+              <circle cx="12" cy="13" r="8" />
+              {/* Clock hands */}
+              <polyline points="12 9 12 13 15.5 14.5" />
+              {/* Top knob */}
+              <line x1="10" y1="5" x2="14" y2="5" />
+              <line x1="12" y1="3" x2="12" y2="5" />
+            </svg>
+            {formatTime(timeRemaining)}
+          </span>
         </div>
 
         <div className="game-wallet">

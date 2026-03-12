@@ -953,14 +953,34 @@ input::placeholder {
 }
 
 .game-timer-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 1.5rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
+.timer-icon {
+  flex-shrink: 0;
+  transform-origin: center top;
+}
+
+.game-timer-header.warning .timer-icon {
+  animation: alarmShake 0.4s ease-in-out infinite;
+}
+
 .game-timer-header.warning .game-timer-value {
   color: var(--error);
   animation: timerPulse 1s ease infinite;
+}
+
+@keyframes alarmShake {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(12deg); }
+  40% { transform: rotate(-12deg); }
+  60% { transform: rotate(8deg); }
+  80% { transform: rotate(-8deg); }
 }
 
 @keyframes timerPulse {
