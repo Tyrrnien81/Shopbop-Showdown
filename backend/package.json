@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "db:create-tables": "node ../scripts/createTables.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1007.0",
