@@ -476,8 +476,11 @@ function Game() {
       {/* Header */}
       <header className="game-header">
         <div className="game-brand">
-          <span className="game-brand-title">Style Showdown</span>
-          <span className="game-brand-subtitle">Presented by Shopbop</span>
+          <img src="/shopbop-favicon.svg" alt="Shopbop" className="game-brand-logo" />
+          <div>
+            <span className="game-brand-title">Style Showdown</span>
+            <span className="game-brand-subtitle">Presented by Shopbop</span>
+          </div>
         </div>
 
         <div className="game-theme-display">
