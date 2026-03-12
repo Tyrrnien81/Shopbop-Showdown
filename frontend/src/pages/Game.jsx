@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { generateTryOnImage, generateSingleTryOnImage } from '../services/geminiApi';
-import { productApi, outfitApi, chatApi, avatarApi } from '../services/api';
+import { productApi, outfitApi, chatApi, avatarApi, gameApi } from '../services/api';
 import useGameStore from '../store/gameStore';
 
 // Sort options supported by the Shopbop API
@@ -97,6 +97,9 @@ function Game() {
   const [chatLoading, setChatLoading] = useState(false);
   const chatMessagesRef = useRef(null);
   const photoInputRef = useRef(null);
+
+  // Live player submission tracker (multiplayer only)
+  const [submissionStatus, setSubmissionStatus] = useState({ submitted: 0, total: 0, players: [] });
 
   const budget = game?.budget || 5000;
   const theme = game?.theme || 'Runway Ready';
@@ -429,6 +432,28 @@ function Game() {
     return () => clearInterval(timer);
   }, [handleSubmitOutfit]);
 
+  // Poll player submission status (multiplayer only)
+  useEffect(() => {
+    if (isSinglePlayer) return;
+
+    const fetchStatus = async () => {
+      try {
+        const response = await gameApi.getPlayers(gameId);
+        const playerList = response.data.players || [];
+        const submitted = playerList.filter(p => p.hasSubmitted).length;
+        setSubmissionStatus({
+          submitted,
+          total: playerList.length,
+          players: playerList.map(p => ({ name: p.username, submitted: p.hasSubmitted })),
+        });
+      } catch { /* ignore */ }
+    };
+
+    fetchStatus();
+    const poll = setInterval(fetchStatus, 3000);
+    return () => clearInterval(poll);
+  }, [gameId, isSinglePlayer]);
+
   const handleProductClick = (product) => {
     if (selectedProducts.has(product.productSin)) {
       // Remove from outfit
@@ -520,6 +545,40 @@ function Game() {
           </span>
           {walletSpend && <span className="wallet-spend-fly">-$</span>}
         </div>
+
+        {/* Live Submission Tracker (multiplayer only) */}
+        {!isSinglePlayer && submissionStatus.total > 0 && (
+          <div className="submission-tracker">
+            <div className="submission-tracker-header">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              <span>{submissionStatus.submitted}/{submissionStatus.total} Submitted</span>
+            </div>
+            <div className="submission-tracker-bar">
+              <div
+                className="submission-tracker-bar-fill"
+                style={{ width: `${(submissionStatus.submitted / submissionStatus.total) * 100}%` }}
+              />
+            </div>
+            <div className="submission-tracker-players">
+              {submissionStatus.players.map((p, i) => (
+                <div key={i} className={`submission-tracker-player ${p.submitted ? 'done' : ''}`}>
+                  <span className="submission-tracker-dot" />
+                  <span className="submission-tracker-name">{p.name}</span>
+                  {p.submitted && (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </header>
 
       <div className="game-content">

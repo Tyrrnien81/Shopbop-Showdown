@@ -1028,6 +1028,89 @@ input::placeholder {
   color: var(--text-muted);
 }
 
+/* Live Submission Tracker */
+.submission-tracker {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 10px 14px;
+  min-width: 180px;
+}
+
+.submission-tracker-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 6px;
+}
+
+.submission-tracker-header svg {
+  color: var(--primary-orange);
+  flex-shrink: 0;
+}
+
+.submission-tracker-bar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.submission-tracker-bar-fill {
+  height: 100%;
+  background: var(--primary-orange);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.submission-tracker-players {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.submission-tracker-player {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+  transition: color 0.3s;
+}
+
+.submission-tracker-player.done {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.submission-tracker-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+
+.submission-tracker-player.done .submission-tracker-dot {
+  background: #34D399;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+}
+
+.submission-tracker-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.submission-tracker-player.done svg {
+  color: #34D399;
+  flex-shrink: 0;
+}
 
 .game-timer-header {
   display: flex;
