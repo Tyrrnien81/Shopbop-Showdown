@@ -44,6 +44,9 @@ function Lobby() {
   const isHost = currentPlayer?.isHost ?? false;
 
   useEffect(() => {
+    // Clear any stale errors from previous pages
+    setError(null);
+
     const username = searchParams.get('username');
     if (username && !currentPlayer && !hasJoinedRef.current) {
       hasJoinedRef.current = true;
@@ -121,8 +124,8 @@ function Lobby() {
       setPlayers(players.map(p =>
         p.playerId === currentPlayer.playerId ? { ...p, isReady: newReady } : p
       ));
-    } catch {
-      setError('Failed to update ready status');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to update ready status');
     }
   };
 
