@@ -705,7 +705,16 @@ function Game() {
                 <div className="product-info">
                   <span className="product-brand">{product.brand || product.category}</span>
                   <span className="product-name">{product.name}</span>
-                  <span className="product-price">${product.price.toFixed(2)}</span>
+                  <div className="product-price-row">
+                    <span className="product-price">${product.price.toFixed(2)}</span>
+                    {product.productUrl && (
+                      <a href={product.productUrl} target="_blank" rel="noopener noreferrer" className="product-shop-link" onClick={e => e.stopPropagation()} title="View on Shopbop">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
+                        </svg>
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
