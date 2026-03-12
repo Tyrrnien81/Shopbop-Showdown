@@ -912,7 +912,19 @@ input::placeholder {
 
 .game-brand {
   display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.game-brand > div {
+  display: flex;
   flex-direction: column;
+}
+
+.game-brand-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
 }
 
 .game-brand-title {
@@ -2395,6 +2407,34 @@ input::placeholder {
   max-width: 750px;
   width: 100%;
   margin: 0 auto;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+/* Outfit Reveal Animation */
+.outfit-revealing {
+  animation: outfitReveal 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.outfit-revealed {
+  opacity: 1;
+  transform: none;
+}
+
+@keyframes outfitReveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.92) translateY(20px);
+    filter: blur(8px);
+  }
+  40% {
+    opacity: 0.6;
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
 }
 
 .voting-outfit-grid {

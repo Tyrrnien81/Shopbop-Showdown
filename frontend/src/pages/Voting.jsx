@@ -57,6 +57,7 @@ function Voting() {
   const [votingComplete, setVotingComplete] = useState(false);
   const [hoveredStar, setHoveredStar] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null); // seconds remaining in game
+  const [revealing, setRevealing] = useState(true); // outfit reveal animation
 
   useEffect(() => {
     fetchOutfits();
@@ -114,15 +115,27 @@ function Voting() {
     }));
   };
 
+  const triggerReveal = () => {
+    setRevealing(true);
+    setTimeout(() => setRevealing(false), 800);
+  };
+
+  // Trigger reveal on initial load
+  useEffect(() => {
+    triggerReveal();
+  }, []);
+
   const handleNext = () => {
     if (currentIndex < totalOutfits - 1) {
       setCurrentIndex((prev) => prev + 1);
+      triggerReveal();
     }
   };
 
   const handlePrev = () => {
     if (currentIndex > 0) {
       setCurrentIndex((prev) => prev - 1);
+      triggerReveal();
     }
   };
 
@@ -242,7 +255,7 @@ function Voting() {
       )}
 
       {/* Outfit Display */}
-      <div className="voting-outfit-display">
+      <div className={`voting-outfit-display ${revealing ? 'outfit-revealing' : 'outfit-revealed'}`}>
         <div className={`voting-look-layout ${currentOutfit.tryOnImage ? 'has-model' : ''}`}>
           {/* Main Image — AI generated or product grid fallback */}
           <div className="voting-main-image">
