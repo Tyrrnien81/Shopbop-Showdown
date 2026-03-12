@@ -1,7 +1,9 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const crypto = require('crypto');
+const { Server } = require('socket.io');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,6 +31,8 @@ const games = new Map();
 const players = new Map();
 const outfits = new Map();
 const votes = new Map();
+
+let io;
 
 // ============================================================
 // UTILITY FUNCTIONS
@@ -425,6 +429,10 @@ app.post('/api/games/:gameId/join', (req, res) => {
 
   const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
   console.log(`${username} joined game ${game.gameId}`);
+
+  // Notify all clients in the room
+  if (io) io.to(game.gameId).emit('player-joined', { players: gamePlayers });
+
   res.json({ player, game: { ...game, players: gamePlayers } });
 });
 
@@ -438,6 +446,11 @@ app.post('/api/games/:gameId/ready', (req, res) => {
   if (!player || player.gameId !== game.gameId) return res.status(404).json({ error: 'Player not found in this game' });
 
   player.isReady = Boolean(isReady);
+
+  // Notify all clients in the room
+  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
+  if (io) io.to(game.gameId).emit('player-ready-changed', { playerId, isReady: player.isReady, players: gamePlayers });
+
   res.json({ success: true, player });
 });
 
@@ -453,6 +466,10 @@ app.post('/api/games/:gameId/start', (req, res) => {
   game.endsAt = new Date(now.getTime() + game.timeLimit * 1000).toISOString();
 
   console.log(`Game ${game.gameId} started`);
+
+  // Notify all clients in the room
+  if (io) io.to(game.gameId).emit('game-started', { gameId: game.gameId, startedAt: game.startedAt, endsAt: game.endsAt, timeLimit: game.timeLimit });
+
   res.json({ success: true, game });
 });
 
@@ -521,6 +538,11 @@ app.post('/api/outfits', (req, res) => {
   }
 
   console.log(`Outfit ${outfitId} submitted by player ${playerId}`);
+
+  // Notify all clients in the room
+  const submittedCount = gamePlayers.filter(p => p.hasSubmitted).length;
+  if (io) io.to(gameId).emit('outfit-submitted', { submittedCount, totalPlayers: gamePlayers.length, gameStatus: game.status });
+
   res.status(201).json({ outfitId, submittedAt: outfit.submittedAt });
 });
 
@@ -589,6 +611,9 @@ app.post('/api/votes', (req, res) => {
     game.endedAt = new Date().toISOString();
     console.log(`Game ${gameId} completed`);
   }
+
+  // Notify all clients in the room
+  if (io) io.to(gameId).emit('vote-submitted', { votesRemaining, isComplete: votesRemaining === 0 });
 
   res.json({ success: true, votesRemaining });
 });
@@ -1074,7 +1099,29 @@ app.post('/api/avatar/generate', async (req, res) => {
 // START SERVER
 // ============================================================
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] },
+});
+
+io.on('connection', (socket) => {
+  console.log(`Socket connected: ${socket.id}`);
+
+  socket.on('join-room', ({ gameId, playerId }) => {
+    if (gameId) {
+      socket.join(gameId);
+      socket.data.gameId = gameId;
+      socket.data.playerId = playerId;
+      console.log(`Socket ${socket.id} joined room ${gameId}`);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`Socket disconnected: ${socket.id}`);
+  });
+});
+
+server.listen(PORT, () => {
   console.log(`Backend server running on http://localhost:${PORT}`);
   if (!GEMINI_API_KEY) console.warn('WARNING: GEMINI_API_KEY not set');
   if (!process.env.SHOPBOP_API_KEY) console.warn('WARNING: SHOPBOP_API_KEY not set — using client-id only');

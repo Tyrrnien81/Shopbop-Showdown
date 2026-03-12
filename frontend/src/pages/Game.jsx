@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { generateTryOnImage, generateSingleTryOnImage } from '../services/geminiApi';
 import { productApi, outfitApi, chatApi, avatarApi } from '../services/api';
 import useGameStore from '../store/gameStore';
+import socketService from '../services/socket';
 
 // Sort options supported by the Shopbop API
 const SORT_OPTIONS = [
@@ -100,6 +101,25 @@ function Game() {
 
   const budget = game?.budget || 5000;
   const theme = game?.theme || 'Runway Ready';
+
+  // Ensure socket is connected and listen for outfit submissions
+  useEffect(() => {
+    const { currentPlayer } = useGameStore.getState();
+    if (currentPlayer?.playerId) {
+      socketService.connect(gameId, currentPlayer.playerId);
+    }
+
+    const onOutfitSubmitted = ({ gameStatus }) => {
+      if (gameStatus === 'VOTING') {
+        navigate(`/voting/${gameId}`);
+      } else if (gameStatus === 'COMPLETED') {
+        navigate(`/results/${gameId}`);
+      }
+    };
+
+    socketService.on('outfit-submitted', onOutfitSubmitted);
+    return () => socketService.off('outfit-submitted', onOutfitSubmitted);
+  }, [gameId, navigate]);
 
   const handleApplyPrice = () => {
     setAppliedMinPrice(minPrice);

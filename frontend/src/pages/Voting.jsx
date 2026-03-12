@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { gameApi, outfitApi, voteApi } from '../services/api';
 import useGameStore from '../store/gameStore';
+import socketService from '../services/socket';
 
 // Mock outfits for development
 const mockOutfits = [
@@ -86,6 +87,23 @@ function Voting() {
     return () => { if (interval) clearInterval(interval); };
   }, [gameId]);
 
+  // Ensure socket is connected and listen for vote completion
+  useEffect(() => {
+    const { currentPlayer } = useGameStore.getState();
+    if (currentPlayer?.playerId) {
+      socketService.connect(gameId, currentPlayer.playerId);
+    }
+
+    const onVoteSubmitted = ({ isComplete }) => {
+      if (isComplete) {
+        setVotingComplete(true);
+      }
+    };
+
+    socketService.on('vote-submitted', onVoteSubmitted);
+    return () => socketService.off('vote-submitted', onVoteSubmitted);
+  }, [gameId]);
+
   const handleGoBack = () => {
     navigate(`/game/${gameId}`);
   };
@@ -156,18 +174,8 @@ function Voting() {
         setHasVoted(true);
         if (votesRemaining === 0) {
           setVotingComplete(true);
-        } else {
-          const poll = setInterval(async () => {
-            try {
-              const gameResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'}/games/${gameId}`);
-              const gameData = await gameResponse.json();
-              if (gameData.status === 'COMPLETED') {
-                clearInterval(poll);
-                setVotingComplete(true);
-              }
-            } catch { /* ignore */ }
-          }, 2000);
         }
+        // Otherwise, socket 'vote-submitted' listener will set votingComplete
       } else {
         setHasVoted(true);
         setTimeout(() => setVotingComplete(true), 2000);

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { voteApi } from '../services/api';
 import useGameStore from '../store/gameStore';
+import socketService from '../services/socket';
 
 // Mock results for development
 const mockResults = [
@@ -86,6 +87,10 @@ function Results() {
     }
     // Clean up after animation
     setTimeout(() => { if (container) container.innerHTML = ''; }, 4500);
+  }, []);
+
+  useEffect(() => {
+    socketService.disconnect();
   }, []);
 
   useEffect(() => {
