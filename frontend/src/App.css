@@ -876,10 +876,10 @@ input::placeholder {
 .game-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   padding: 16px 32px;
   background: var(--bg-white);
   border-bottom: 1px solid var(--border-light);
+  gap: 32px;
 }
 
 .game-brand {
@@ -902,6 +902,8 @@ input::placeholder {
 }
 
 .game-theme-display {
+  display: flex;
+  flex-direction: column;
   text-align: center;
 }
 
@@ -919,6 +921,8 @@ input::placeholder {
 }
 
 .game-wallet {
+  display: flex;
+  flex-direction: column;
   text-align: right;
 }
 
@@ -935,7 +939,10 @@ input::placeholder {
 }
 
 .game-timer-header {
+  display: flex;
+  flex-direction: column;
   text-align: right;
+  margin-left: auto;
 }
 
 .game-timer-label {
