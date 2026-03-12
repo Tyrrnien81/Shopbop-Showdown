@@ -60,20 +60,30 @@ function Voting() {
 
   useEffect(() => {
     fetchOutfits();
-    checkTimeRemaining();
-  }, [gameId]);
+    // Fetch game info and start a live countdown
+    let interval;
+    (async () => {
+      try {
+        const response = await gameApi.getGame(gameId);
+        const game = response.data;
+        if (game.startedAt && game.timeLimit) {
+          const startMs = new Date(game.startedAt).getTime();
+          const endMs = startMs + game.timeLimit * 1000;
 
-  const checkTimeRemaining = async () => {
-    try {
-      const response = await gameApi.getGame(gameId);
-      const game = response.data;
-      if (game.startedAt && game.timeLimit) {
-        const elapsed = (Date.now() - new Date(game.startedAt).getTime()) / 1000;
-        const remaining = Math.max(0, game.timeLimit - elapsed);
-        setTimeLeft(Math.floor(remaining));
-      }
-    } catch { /* ignore */ }
-  };
+          const tick = () => {
+            const remaining = Math.max(0, Math.floor((endMs - Date.now()) / 1000));
+            setTimeLeft(remaining);
+            if (remaining <= 0) clearInterval(interval);
+          };
+
+          tick(); // set immediately
+          interval = setInterval(tick, 1000);
+        }
+      } catch { /* ignore */ }
+    })();
+
+    return () => { if (interval) clearInterval(interval); };
+  }, [gameId]);
 
   const handleGoBack = () => {
     navigate(`/game/${gameId}`);
