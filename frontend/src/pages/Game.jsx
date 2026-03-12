@@ -607,7 +607,7 @@ function Game() {
                     onClick={() => handleProductClick(product)}
                   >
                     <div className="product-image-container">
-                      <img src={product.imageUrl} alt={product.name} />
+                      <img src={product.imageUrl} alt={product.name} referrerPolicy="no-referrer" loading="lazy" decoding="async" onLoad={e => e.target.classList.add('loaded')} />
                       {selectedProducts.has(product.productSin) && (
                         <div className="product-check">✓</div>
                       )}
@@ -649,7 +649,7 @@ function Game() {
                 onClick={() => handleProductClick(product)}
               >
                 <div className="product-image-container">
-                  <img src={product.imageUrl} alt={product.name} />
+                  <img src={product.imageUrl} alt={product.name} referrerPolicy="no-referrer" loading="lazy" decoding="async" onLoad={e => e.target.classList.add('loaded')} />
                   {selectedProducts.has(product.productSin) && (
                     <div className="product-check">✓</div>
                   )}
@@ -681,7 +681,7 @@ function Game() {
             <div className="outfit-items-grid">
               {currentOutfit.products.map((product) => (
                 <div key={product.productSin} className="outfit-item">
-                  <img src={product.imageUrl} alt={product.name} />
+                  <img src={product.imageUrl} alt={product.name} referrerPolicy="no-referrer" loading="lazy" decoding="async" onLoad={e => e.target.classList.add('loaded')} />
                   <span className="outfit-item-label">{product.category}</span>
                   <button
                     className="outfit-item-remove"
@@ -780,7 +780,7 @@ function Game() {
                   <div className="chat-products">
                     {msg.products.map((p) => (
                       <div key={p.productSin} className="chat-product-card">
-                        <img src={p.imageUrl} alt={p.name} />
+                        <img src={p.imageUrl} alt={p.name} referrerPolicy="no-referrer" loading="lazy" decoding="async" onLoad={e => e.target.classList.add('loaded')} />
                         <div className="chat-product-info">
                           <span className="chat-product-name">{p.name}</span>
                           <span className="chat-product-price">${p.price.toLocaleString()}</span>
