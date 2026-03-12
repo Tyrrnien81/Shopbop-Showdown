@@ -524,6 +524,7 @@ app.get('/api/games/:gameId/outfits', (req, res) => {
         outfitId: outfit.outfitId,
         products: outfit.products,
         totalPrice: outfit.totalPrice,
+        tryOnImage: outfit.tryOnImage || null,
       });
     } else {
       // Include player info for completed games
@@ -534,6 +535,7 @@ app.get('/api/games/:gameId/outfits', (req, res) => {
         playerName: player?.username,
         products: outfit.products,
         totalPrice: outfit.totalPrice,
+        tryOnImage: outfit.tryOnImage || null,
       });
     }
   }
