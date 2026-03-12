@@ -211,7 +211,7 @@ function Voting() {
           <div className="spinner" style={{ borderColor: 'rgba(255,255,255,0.2)', borderTopColor: 'var(--primary-orange)' }}></div>
           <h2>Vote Submitted!</h2>
           <p style={{ color: 'rgba(255,255,255,0.6)' }}>Waiting for other players to vote...</p>
-          {voteStatus.total > 1 && (
+          {voteStatus.total > 0 && (
             <div className="vote-tracker" style={{ marginTop: '24px' }}>
               <div className="vote-tracker-header">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -296,7 +296,7 @@ function Voting() {
       </header>
 
       {/* Live Voting Tracker */}
-      {voteStatus.total > 1 && (
+      {voteStatus.total > 0 && (
         <div className="vote-tracker">
           <div className="vote-tracker-header">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

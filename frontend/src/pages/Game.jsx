@@ -432,10 +432,8 @@ function Game() {
     return () => clearInterval(timer);
   }, [handleSubmitOutfit]);
 
-  // Poll player submission status (multiplayer only)
+  // Poll player submission status
   useEffect(() => {
-    if (isSinglePlayer) return;
-
     const fetchStatus = async () => {
       try {
         const response = await gameApi.getPlayers(gameId);
@@ -546,40 +544,37 @@ function Game() {
           {walletSpend && <span className="wallet-spend-fly">-$</span>}
         </div>
 
-        {/* Live Submission Tracker (multiplayer only) */}
-        {!isSinglePlayer && submissionStatus.total > 0 && (
-          <div className="submission-tracker">
-            <div className="submission-tracker-header">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-              <span>{submissionStatus.submitted}/{submissionStatus.total} Submitted</span>
-            </div>
-            <div className="submission-tracker-bar">
-              <div
-                className="submission-tracker-bar-fill"
-                style={{ width: `${(submissionStatus.submitted / submissionStatus.total) * 100}%` }}
-              />
-            </div>
-            <div className="submission-tracker-players">
+      </header>
+
+      {/* Live Submission Tracker Banner */}
+      {submissionStatus.total > 0 && (
+        <div className="submission-banner">
+          <div className="submission-banner-info">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span>{submissionStatus.submitted}/{submissionStatus.total} Players Submitted</span>
+            <div className="submission-banner-dots">
               {submissionStatus.players.map((p, i) => (
-                <div key={i} className={`submission-tracker-player ${p.submitted ? 'done' : ''}`}>
-                  <span className="submission-tracker-dot" />
-                  <span className="submission-tracker-name">{p.name}</span>
-                  {p.submitted && (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                  )}
-                </div>
+                <span
+                  key={i}
+                  className={`submission-banner-dot ${p.submitted ? 'done' : ''}`}
+                  title={`${p.name}${p.submitted ? ' - Submitted' : ' - Working...'}`}
+                />
               ))}
             </div>
           </div>
-        )}
-      </header>
+          <div className="submission-banner-bar">
+            <div
+              className="submission-banner-bar-fill"
+              style={{ width: `${(submissionStatus.submitted / submissionStatus.total) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="game-content">
         {/* Products Panel */}
