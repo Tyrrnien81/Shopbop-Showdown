@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { voteApi } from '../services/api';
 import useGameStore from '../store/gameStore';
@@ -51,10 +51,42 @@ function Results() {
   const { results, setResults, resetGame, isSinglePlayer } = useGameStore();
   const [isLoading, setIsLoadingLocal] = useState(true);
   const [expandedItems, setExpandedItems] = useState({}); // outfitId → true means show items dropdown
+  const confettiRef = useRef(null);
 
   const toggleItems = (outfitId) => {
     setExpandedItems(prev => ({ ...prev, [outfitId]: !prev[outfitId] }));
   };
+
+  const launchConfetti = useCallback(() => {
+    const container = confettiRef.current;
+    if (!container) return;
+    container.innerHTML = '';
+    const colors = ['#EE4A1B', '#FFD700', '#FF6B6B', '#4ECDC4', '#A855F7', '#F472B6', '#FBBF24', '#34D399'];
+    const shapes = ['circle', 'square', 'strip'];
+    for (let i = 0; i < 120; i++) {
+      const piece = document.createElement('div');
+      const shape = shapes[Math.floor(Math.random() * shapes.length)];
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      const left = Math.random() * 100;
+      const delay = Math.random() * 0.6;
+      const duration = 2.5 + Math.random() * 2;
+      const drift = (Math.random() - 0.5) * 200;
+      const spin = Math.random() * 720 - 360;
+
+      piece.className = `confetti-piece confetti-${shape}`;
+      piece.style.cssText = `
+        left: ${left}%;
+        background: ${color};
+        animation-delay: ${delay}s;
+        animation-duration: ${duration}s;
+        --drift: ${drift}px;
+        --spin: ${spin}deg;
+      `;
+      container.appendChild(piece);
+    }
+    // Clean up after animation
+    setTimeout(() => { if (container) container.innerHTML = ''; }, 4500);
+  }, []);
 
   useEffect(() => {
     fetchResults();
@@ -70,6 +102,7 @@ function Results() {
       setResults(mockResults);
     } finally {
       setIsLoadingLocal(false);
+      setTimeout(() => launchConfetti(), 300);
     }
   };
 
@@ -108,6 +141,9 @@ function Results() {
 
   return (
     <div className="results-container">
+      {/* Confetti */}
+      <div className="confetti-container" ref={confettiRef} />
+
       {/* Header */}
       <header className="results-header">
         <h1>{isSinglePlayer ? 'Your Look' : 'The Results Are In'}</h1>
