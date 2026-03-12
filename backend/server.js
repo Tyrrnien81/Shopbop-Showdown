@@ -475,7 +475,19 @@ app.post('/api/outfits', (req, res) => {
 
   const player = players.get(playerId);
   if (!player || player.gameId !== gameId) return res.status(404).json({ error: 'Player not found in this game' });
-  if (player.hasSubmitted) return res.status(400).json({ error: 'Outfit already submitted' });
+
+  // Allow re-submission: update existing outfit if player already submitted
+  if (player.hasSubmitted && player.outfitId) {
+    const existingOutfit = outfits.get(player.outfitId);
+    if (existingOutfit) {
+      existingOutfit.products = outfitProducts || [];
+      existingOutfit.totalPrice = totalPrice || 0;
+      existingOutfit.tryOnImage = tryOnImage || null;
+      existingOutfit.submittedAt = new Date().toISOString();
+      console.log(`Outfit ${player.outfitId} re-submitted by player ${playerId}`);
+      return res.status(200).json({ outfitId: player.outfitId, submittedAt: existingOutfit.submittedAt });
+    }
+  }
 
   const outfitId = generateId();
   const outfit = {

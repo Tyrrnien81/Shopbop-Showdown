@@ -1842,15 +1842,16 @@ input::placeholder {
 /* Selected Preview Thumbnail */
 .selected-preview {
   margin-top: 12px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .selected-preview img {
   width: 100%;
   height: auto;
-  max-height: 150px;
-  object-fit: cover;
+  object-fit: contain;
+  display: block;
 }
 
 /* ============================================
