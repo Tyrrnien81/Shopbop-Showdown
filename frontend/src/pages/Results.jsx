@@ -45,13 +45,22 @@ const mockResults = [
   },
 ];
 
+// Reveal phases: drumroll → 3rd → 2nd → 1st → full
+const PHASE_DRUMROLL = 0;
+const PHASE_THIRD = 1;
+const PHASE_SECOND = 2;
+const PHASE_FIRST = 3;
+const PHASE_FULL = 4;
+
 function Results() {
   const { gameId } = useParams();
   const navigate = useNavigate();
   const { results, setResults, resetGame, isSinglePlayer } = useGameStore();
   const [isLoading, setIsLoadingLocal] = useState(true);
-  const [expandedItems, setExpandedItems] = useState({}); // outfitId → true means show items dropdown
+  const [expandedItems, setExpandedItems] = useState({});
+  const [revealPhase, setRevealPhase] = useState(PHASE_DRUMROLL);
   const confettiRef = useRef(null);
+  const revealTimers = useRef([]);
 
   const toggleItems = (outfitId) => {
     setExpandedItems(prev => ({ ...prev, [outfitId]: !prev[outfitId] }));
@@ -84,12 +93,55 @@ function Results() {
       `;
       container.appendChild(piece);
     }
-    // Clean up after animation
     setTimeout(() => { if (container) container.innerHTML = ''; }, 4500);
   }, []);
 
+  const startRevealSequence = useCallback((data) => {
+    // Clear any existing timers
+    revealTimers.current.forEach(t => clearTimeout(t));
+    revealTimers.current = [];
+
+    const count = data.length;
+
+    if (count <= 1) {
+      // Single player or single result — skip dramatic reveal
+      setRevealPhase(PHASE_FULL);
+      setTimeout(() => launchConfetti(), 300);
+      return;
+    }
+
+    // Drumroll phase
+    setRevealPhase(PHASE_DRUMROLL);
+
+    // Reveal 3rd (or last place) after 1.5s
+    const t1 = setTimeout(() => {
+      setRevealPhase(PHASE_THIRD);
+    }, 1500);
+
+    // Reveal 2nd after 3.5s
+    const t2 = setTimeout(() => {
+      setRevealPhase(PHASE_SECOND);
+    }, 3500);
+
+    // Reveal 1st after 5.5s + confetti
+    const t3 = setTimeout(() => {
+      setRevealPhase(PHASE_FIRST);
+      setTimeout(() => launchConfetti(), 400);
+    }, 5500);
+
+    // Show full results (actions, rest of list) after 7.5s
+    const t4 = setTimeout(() => {
+      setRevealPhase(PHASE_FULL);
+    }, 7500);
+
+    revealTimers.current = [t1, t2, t3, t4];
+  }, [launchConfetti]);
+
   useEffect(() => {
     fetchResults();
+    return () => {
+      revealTimers.current.forEach(t => clearTimeout(t));
+    };
   }, [gameId]);
 
   const fetchResults = async () => {
@@ -97,13 +149,22 @@ function Results() {
     try {
       const response = await voteApi.getResults(gameId);
       const fetched = response.data.results || [];
-      setResults(fetched.length > 0 ? fetched : mockResults);
+      const data = fetched.length > 0 ? fetched : mockResults;
+      setResults(data);
+      setIsLoadingLocal(false);
+      startRevealSequence(data);
     } catch {
       setResults(mockResults);
-    } finally {
       setIsLoadingLocal(false);
-      setTimeout(() => launchConfetti(), 300);
+      startRevealSequence(mockResults);
     }
+  };
+
+  const skipReveal = () => {
+    revealTimers.current.forEach(t => clearTimeout(t));
+    revealTimers.current = [];
+    setRevealPhase(PHASE_FULL);
+    launchConfetti();
   };
 
   const handlePlayAgain = () => {
@@ -139,6 +200,36 @@ function Results() {
   const topThree = displayResults.slice(0, 3);
   const restOfResults = displayResults.slice(3);
 
+  // Drumroll screen
+  if (revealPhase === PHASE_DRUMROLL) {
+    return (
+      <div className="results-container">
+        <div className="reveal-drumroll">
+          <div className="reveal-drumroll-icon">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+            </svg>
+          </div>
+          <h1 className="reveal-drumroll-title">And the results are...</h1>
+          <div className="reveal-drumroll-dots">
+            <span className="reveal-dot">.</span>
+            <span className="reveal-dot">.</span>
+            <span className="reveal-dot">.</span>
+          </div>
+          <button className="reveal-skip-btn" onClick={skipReveal}>
+            Skip Reveal
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Determine which places to show based on phase
+  const showThird = revealPhase >= PHASE_THIRD && topThree.length >= 3;
+  const showSecond = revealPhase >= PHASE_SECOND && topThree.length >= 2;
+  const showFirst = revealPhase >= PHASE_FIRST;
+  const showFull = revealPhase >= PHASE_FULL;
+
   return (
     <div className="results-container">
       {/* Confetti */}
@@ -149,6 +240,13 @@ function Results() {
         <h1>{isSinglePlayer ? 'Your Look' : 'The Results Are In'}</h1>
       </header>
 
+      {/* Skip button during reveal */}
+      {!showFull && (
+        <button className="reveal-skip-btn reveal-skip-corner" onClick={skipReveal}>
+          Skip
+        </button>
+      )}
+
       {/* Winner Podium */}
       <div className="winner-podium">
         {topThree.map((result, index) => {
@@ -156,9 +254,24 @@ function Results() {
           const emoji = index === 0 ? '👑' : index === 1 ? '🥈' : '🥉';
           const isExpanded = expandedItems[result.outfitId];
 
+          // Should this place be visible?
+          const isVisible =
+            (index === 0 && showFirst) ||
+            (index === 1 && showSecond) ||
+            (index === 2 && showThird);
+
+          // Is this the one currently being revealed?
+          const isRevealing =
+            (index === 2 && revealPhase === PHASE_THIRD) ||
+            (index === 1 && revealPhase === PHASE_SECOND) ||
+            (index === 0 && revealPhase === PHASE_FIRST);
+
           return (
-            <div key={result.outfitId} className={`podium-place ${placeClass}`}>
-              {/* Main Image — AI generated or product grid fallback */}
+            <div
+              key={result.outfitId}
+              className={`podium-place ${placeClass} ${isVisible ? 'podium-visible' : 'podium-hidden'} ${isRevealing ? 'podium-revealing' : ''}`}
+            >
+              {/* Main Image */}
               <div className="podium-outfit">
                 {result.tryOnImage ? (
                   <img
@@ -237,9 +350,18 @@ function Results() {
         })}
       </div>
 
-      {/* Rest of Results */}
-      {restOfResults.length > 0 && (
-        <div className="results-rest">
+      {/* Reveal label during sequential reveal */}
+      {!showFull && revealPhase >= PHASE_THIRD && (
+        <div className="reveal-place-label">
+          {revealPhase === PHASE_THIRD && '3rd Place'}
+          {revealPhase === PHASE_SECOND && '2nd Place'}
+          {revealPhase === PHASE_FIRST && '1st Place!'}
+        </div>
+      )}
+
+      {/* Rest of Results — only after full reveal */}
+      {showFull && restOfResults.length > 0 && (
+        <div className="results-rest results-rest-reveal">
           <h3>Other Submissions</h3>
           {restOfResults.map((result) => {
             const isExpanded = expandedItems[result.outfitId];
@@ -295,26 +417,28 @@ function Results() {
         </div>
       )}
 
-      {/* Actions */}
-      <div className="results-actions">
-        <button onClick={handleShareResults} className="btn btn-secondary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="18" cy="5" r="3" />
-            <circle cx="6" cy="12" r="3" />
-            <circle cx="18" cy="19" r="3" />
-            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-          </svg>
-          Share Results
-        </button>
-        <button onClick={handlePlayAgain} className="btn btn-primary">
-          Play Again
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M23 4v6h-6M1 20v-6h6" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
-        </button>
-      </div>
+      {/* Actions — only after full reveal */}
+      {showFull && (
+        <div className="results-actions results-actions-reveal">
+          <button onClick={handleShareResults} className="btn btn-secondary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="18" cy="5" r="3" />
+              <circle cx="6" cy="12" r="3" />
+              <circle cx="18" cy="19" r="3" />
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+              <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+            </svg>
+            Share Results
+          </button>
+          <button onClick={handlePlayAgain} className="btn btn-primary">
+            Play Again
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M23 4v6h-6M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

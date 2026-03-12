@@ -2889,6 +2889,152 @@ input::placeholder {
   margin-top: 48px;
 }
 
+/* === Dramatic Reveal Animations === */
+
+/* Drumroll screen */
+.reveal-drumroll {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  gap: 16px;
+  animation: revealFadeIn 0.6s ease-out;
+}
+
+.reveal-drumroll-icon {
+  color: var(--primary-orange);
+  animation: revealPulse 1s ease-in-out infinite;
+}
+
+.reveal-drumroll-title {
+  font-size: 2.2rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: white;
+}
+
+.reveal-drumroll-dots {
+  display: flex;
+  gap: 8px;
+  font-size: 3rem;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.reveal-dot {
+  animation: revealDotBounce 1.2s ease-in-out infinite;
+}
+
+.reveal-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.reveal-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes revealDotBounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-12px); opacity: 1; }
+}
+
+@keyframes revealPulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+@keyframes revealFadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Skip button */
+.reveal-skip-btn {
+  margin-top: 24px;
+  padding: 8px 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.reveal-skip-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.reveal-skip-corner {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 100;
+  margin-top: 0;
+}
+
+/* Podium place reveal states */
+.podium-hidden {
+  opacity: 0;
+  transform: scale(0.8) translateY(30px);
+  pointer-events: none;
+}
+
+.podium-visible {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+  transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+}
+
+.podium-revealing {
+  animation: podiumReveal 0.8s ease-out forwards;
+}
+
+@keyframes podiumReveal {
+  0% {
+    opacity: 0;
+    transform: scale(0.7) translateY(40px);
+    filter: blur(8px);
+  }
+  50% {
+    opacity: 1;
+    filter: blur(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* Reveal place label */
+.reveal-place-label {
+  font-size: 1.4rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  color: var(--primary-orange);
+  margin-top: -32px;
+  margin-bottom: 32px;
+  animation: revealLabelPop 0.5s ease-out;
+}
+
+@keyframes revealLabelPop {
+  0% { opacity: 0; transform: scale(0.5); }
+  60% { transform: scale(1.1); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Fade-in for rest of results and actions after reveal */
+.results-rest-reveal {
+  animation: revealFadeIn 0.6s ease-out;
+}
+
+.results-actions-reveal {
+  animation: revealFadeIn 0.6s ease-out;
+}
+
 /* Podium Model Image (AI generated — primary display) */
 .podium-model-img {
   width: 100%;
