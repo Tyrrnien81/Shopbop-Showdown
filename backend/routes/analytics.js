@@ -12,10 +12,15 @@ router.use(adminAuth);
 // are computed on-demand by scanning all DynamoDB tables.
 router.get('/analytics', async (req, res) => {
   try {
-    const allGames = await db.scanAllGames();
-    const gameStats = computeGameStats(allGames);
+    const [allGames, allOutfits] = await Promise.all([
+      db.scanAllGames(),
+      db.scanAllOutfits(),
+    ]);
 
-    res.json({ gameStats });
+    const gameStats = computeGameStats(allGames);
+    const productPopularity = computeProductPopularity(allOutfits);
+
+    res.json({ gameStats, productPopularity });
   } catch (err) {
     console.error('Analytics error:', err.message);
     res.status(500).json({ error: 'Failed to load analytics' });
@@ -93,6 +98,67 @@ function computeGameStats(games) {
     avgPlayersPerGame,
     avgDurationSeconds,
     gamesOverTime,
+  };
+}
+
+// ------------------------------------------------------------
+// PRODUCT POPULARITY
+// ------------------------------------------------------------
+
+function computeProductPopularity(outfits, topN = 20) {
+  // productId → { id, name, brand, category, price, imageUrl, pickCount }
+  const productMap = new Map();
+  // category → total picks
+  const categoryPickCount = {};
+
+  for (const outfit of outfits) {
+    if (!Array.isArray(outfit.products)) continue;
+    for (const p of outfit.products) {
+      const id = p.id || p.productSin || p.asin;
+      if (!id) continue;
+
+      if (!productMap.has(id)) {
+        productMap.set(id, {
+          id,
+          name: p.name || p.productName || '',
+          brand: p.brand || p.designerName || '',
+          category: p.category || 'unknown',
+          price: p.price ?? p.retailPrice ?? null,
+          imageUrl: p.imageUrl || p.image || null,
+          pickCount: 0,
+        });
+      }
+      productMap.get(id).pickCount += 1;
+
+      const cat = p.category || 'unknown';
+      categoryPickCount[cat] = (categoryPickCount[cat] || 0) + 1;
+    }
+  }
+
+  // Sort all products by pickCount descending, return top N
+  const topProducts = Array.from(productMap.values())
+    .sort((a, b) => b.pickCount - a.pickCount)
+    .slice(0, topN);
+
+  // Top products per category (top 5 each)
+  const byCategory = {};
+  for (const product of productMap.values()) {
+    const cat = product.category;
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(product);
+  }
+  for (const cat of Object.keys(byCategory)) {
+    byCategory[cat] = byCategory[cat]
+      .sort((a, b) => b.pickCount - a.pickCount)
+      .slice(0, 5);
+  }
+
+  return {
+    totalProductsPicked: Array.from(productMap.values()).reduce((s, p) => s + p.pickCount, 0),
+    uniqueProductsUsed: productMap.size,
+    topProducts,
+    categoryPickCount,
+    topProductsByCategory: byCategory,
   };
 }
 
