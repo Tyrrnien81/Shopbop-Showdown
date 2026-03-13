@@ -12,15 +12,17 @@ router.use(adminAuth);
 // are computed on-demand by scanning all DynamoDB tables.
 router.get('/analytics', async (req, res) => {
   try {
-    const [allGames, allOutfits] = await Promise.all([
+    const [allGames, allOutfits, allVotes] = await Promise.all([
       db.scanAllGames(),
       db.scanAllOutfits(),
+      db.scanAllVotes(),
     ]);
 
     const gameStats = computeGameStats(allGames);
     const productPopularity = computeProductPopularity(allOutfits);
+    const productPerformance = computeProductPerformance(allOutfits, allVotes);
 
-    res.json({ gameStats, productPopularity });
+    res.json({ gameStats, productPopularity, productPerformance });
   } catch (err) {
     console.error('Analytics error:', err.message);
     res.status(500).json({ error: 'Failed to load analytics' });
@@ -159,6 +161,88 @@ function computeProductPopularity(outfits, topN = 20) {
     topProducts,
     categoryPickCount,
     topProductsByCategory: byCategory,
+  };
+}
+
+// ------------------------------------------------------------
+// PRODUCT PERFORMANCE (score-correlated)
+// ------------------------------------------------------------
+
+function computeProductPerformance(outfits, votes, topN = 20) {
+  // Build outfitId → { total, count } from votes
+  const voteAccum = new Map();
+  for (const v of votes) {
+    const entry = voteAccum.get(v.outfitId) || { total: 0, count: 0 };
+    entry.total += v.rating;
+    entry.count += 1;
+    voteAccum.set(v.outfitId, entry);
+  }
+
+  // Only use outfits that received at least one vote
+  const scoredOutfits = outfits.filter(o => voteAccum.has(o.outfitId));
+
+  // Budget vs score: one data point per scored outfit
+  const budgetVsScore = scoredOutfits.map(o => {
+    const { total, count } = voteAccum.get(o.outfitId);
+    return {
+      outfitId: o.outfitId,
+      totalPrice: o.totalPrice || 0,
+      avgScore: parseFloat((total / count).toFixed(2)),
+      productCount: o.products?.length || 0,
+    };
+  });
+
+  // productId → accumulated score across all outfits it appeared in
+  const productScoreMap = new Map();
+  for (const outfit of scoredOutfits) {
+    if (!Array.isArray(outfit.products)) continue;
+    const { total, count } = voteAccum.get(outfit.outfitId);
+    const outfitAvgScore = total / count;
+    for (const p of outfit.products) {
+      const id = p.id || p.productSin || p.asin;
+      if (!id) continue;
+      if (!productScoreMap.has(id)) {
+        productScoreMap.set(id, {
+          id,
+          name: p.name || p.productName || '',
+          brand: p.brand || p.designerName || '',
+          category: p.category || 'unknown',
+          price: p.price ?? p.retailPrice ?? null,
+          imageUrl: p.imageUrl || p.image || null,
+          totalScore: 0,
+          outfitCount: 0,
+        });
+      }
+      const entry = productScoreMap.get(id);
+      entry.totalScore += outfitAvgScore;
+      entry.outfitCount += 1;
+    }
+  }
+
+  // Compute avgScoreWhenPicked; require at least 2 outfit appearances to reduce noise
+  const topProductsByScore = Array.from(productScoreMap.values())
+    .map(p => ({ ...p, avgScoreWhenPicked: parseFloat((p.totalScore / p.outfitCount).toFixed(2)) }))
+    .filter(p => p.outfitCount >= 2)
+    .sort((a, b) => b.avgScoreWhenPicked - a.avgScoreWhenPicked)
+    .slice(0, topN);
+
+  // Overall avg rating across all votes
+  const overallAvgRating = votes.length > 0
+    ? parseFloat((votes.reduce((s, v) => s + v.rating, 0) / votes.length).toFixed(2))
+    : null;
+
+  // Rating distribution histogram (1–5)
+  const ratingDistribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const v of votes) {
+    const r = Math.round(v.rating);
+    if (r >= 1 && r <= 5) ratingDistribution[r] += 1;
+  }
+
+  return {
+    overallAvgRating,
+    ratingDistribution,
+    budgetVsScore,
+    topProductsByScore,
   };
 }
 
