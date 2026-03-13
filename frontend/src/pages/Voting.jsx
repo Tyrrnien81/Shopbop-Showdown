@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { outfitApi, voteApi } from '../services/api';
+import { gameApi, outfitApi, voteApi } from '../services/api';
 import useGameStore from '../store/gameStore';
+import socketService from '../services/socket';
 
 // Mock outfits for development
 const mockOutfits = [
@@ -56,10 +57,56 @@ function Voting() {
   const [ratings, setRatings] = useState({});
   const [votingComplete, setVotingComplete] = useState(false);
   const [hoveredStar, setHoveredStar] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(null); // seconds remaining in game
+  const [revealing, setRevealing] = useState(true); // outfit reveal animation
 
   useEffect(() => {
     fetchOutfits();
+    // Fetch game info and start a live countdown
+    let interval;
+    (async () => {
+      try {
+        const response = await gameApi.getGame(gameId);
+        const game = response.data;
+        if (game.startedAt && game.timeLimit) {
+          const startMs = new Date(game.startedAt).getTime();
+          const endMs = startMs + game.timeLimit * 1000;
+
+          const tick = () => {
+            const remaining = Math.max(0, Math.floor((endMs - Date.now()) / 1000));
+            setTimeLeft(remaining);
+            if (remaining <= 0) clearInterval(interval);
+          };
+
+          tick(); // set immediately
+          interval = setInterval(tick, 1000);
+        }
+      } catch { /* ignore */ }
+    })();
+
+    return () => { if (interval) clearInterval(interval); };
   }, [gameId]);
+
+  // Ensure socket is connected and listen for vote completion
+  useEffect(() => {
+    const { currentPlayer } = useGameStore.getState();
+    if (currentPlayer?.playerId) {
+      socketService.connect(gameId, currentPlayer.playerId);
+    }
+
+    const onVoteSubmitted = ({ isComplete }) => {
+      if (isComplete) {
+        setVotingComplete(true);
+      }
+    };
+
+    socketService.on('vote-submitted', onVoteSubmitted);
+    return () => socketService.off('vote-submitted', onVoteSubmitted);
+  }, [gameId]);
+
+  const handleGoBack = () => {
+    navigate(`/game/${gameId}`);
+  };
 
   const fetchOutfits = async () => {
     setLoading(true);
@@ -68,7 +115,6 @@ function Voting() {
       const fetched = response.data.outfits || [];
       setOutfits(fetched.length > 0 ? fetched : mockOutfits);
     } catch {
-      // Fall back to mock data if API unavailable
       setOutfits(mockOutfits);
     } finally {
       setLoading(false);
@@ -87,15 +133,27 @@ function Voting() {
     }));
   };
 
+  const triggerReveal = () => {
+    setRevealing(true);
+    setTimeout(() => setRevealing(false), 800);
+  };
+
+  // Trigger reveal on initial load
+  useEffect(() => {
+    triggerReveal();
+  }, []);
+
   const handleNext = () => {
     if (currentIndex < totalOutfits - 1) {
       setCurrentIndex((prev) => prev + 1);
+      triggerReveal();
     }
   };
 
   const handlePrev = () => {
     if (currentIndex > 0) {
       setCurrentIndex((prev) => prev - 1);
+      triggerReveal();
     }
   };
 
@@ -116,21 +174,9 @@ function Voting() {
         setHasVoted(true);
         if (votesRemaining === 0) {
           setVotingComplete(true);
-        } else {
-          // Poll until all votes are in
-          const poll = setInterval(async () => {
-            try {
-              const gameResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api'}/games/${gameId}`);
-              const gameData = await gameResponse.json();
-              if (gameData.status === 'COMPLETED') {
-                clearInterval(poll);
-                setVotingComplete(true);
-              }
-            } catch { /* ignore */ }
-          }, 2000);
         }
+        // Otherwise, socket 'vote-submitted' listener will set votingComplete
       } else {
-        // Dev fallback (no player ID)
         setHasVoted(true);
         setTimeout(() => setVotingComplete(true), 2000);
       }
@@ -200,6 +246,14 @@ function Voting() {
             style={{ width: `${progressPercentage}%` }}
           />
         </div>
+        {timeLeft !== null && timeLeft > 0 && (
+          <button onClick={handleGoBack} className="voting-go-back-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+            Go Back & Edit ({Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')} left)
+          </button>
+        )}
       </header>
 
       {error && (
@@ -209,16 +263,57 @@ function Voting() {
       )}
 
       {/* Outfit Display */}
-      <div className="voting-outfit-display">
-        <div className="voting-outfit-grid">
-          {currentOutfit.products.map((product) => (
-            <div key={product.productSin} className="voting-outfit-item">
-              <img src={product.imageUrl} alt={product.name} />
-              <div className="voting-outfit-item-label">{product.category}</div>
+      <div className={`voting-outfit-display ${revealing ? 'outfit-revealing' : 'outfit-revealed'}`}>
+        <div className={`voting-look-layout ${currentOutfit.tryOnImage ? 'has-model' : ''}`}>
+          {/* Main Image — AI generated or product grid fallback */}
+          <div className="voting-main-image">
+            {currentOutfit.tryOnImage ? (
+              <img
+                src={currentOutfit.tryOnImage}
+                alt={`${currentOutfit.playerName}'s look`}
+                className="voting-model-img"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="voting-outfit-grid">
+                {currentOutfit.products.map((product) => (
+                  <div key={product.productSin} className="voting-outfit-item">
+                    <img src={product.imageUrl} alt={product.name} referrerPolicy="no-referrer" />
+                    <div className="voting-outfit-item-label">{product.category}</div>
+                  </div>
+                ))}
+                {currentOutfit.products.length < 4 && (
+                  <div className="voting-outfit-item voting-add-more">+</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Side Items Panel — visible when AI image exists */}
+          {currentOutfit.tryOnImage && (
+            <div className="voting-side-items">
+              <div className="voting-side-items-header">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" />
+                </svg>
+                {currentOutfit.products.length} Items
+              </div>
+              <div className="voting-side-items-list">
+                {currentOutfit.products.map((product) => (
+                  <div key={product.productSin} className="voting-side-item">
+                    <img src={product.imageUrl} alt={product.name} referrerPolicy="no-referrer" />
+                    <div className="voting-side-item-info">
+                      <span className="voting-side-item-name">{product.name}</span>
+                      <span className="voting-side-item-cat">{product.category}</span>
+                      <span className="voting-side-item-price">${product.price.toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
-          {currentOutfit.products.length < 4 && (
-            <div className="voting-outfit-item voting-add-more">+</div>
           )}
         </div>
 

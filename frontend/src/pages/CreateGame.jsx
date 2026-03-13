@@ -22,6 +22,7 @@ function CreateGame() {
     budget: 5000,
     maxPlayers: 4,
     timeLimit: 300,
+    singlePlayer: false,
   });
 
   const handleThemeSelect = (themeId) => {
@@ -51,7 +52,14 @@ function CreateGame() {
       const { game, player } = response.data;
       setGame(game);
       setCurrentPlayer(player);
-      navigate(`/lobby/${game.gameId}`);
+
+      if (formData.singlePlayer) {
+        // Auto-start and go straight to game
+        await gameApi.startGame(game.gameId);
+        navigate(`/game/${game.gameId}`);
+      } else {
+        navigate(`/lobby/${game.gameId}`);
+      }
     } catch (error) {
       setError(error.response?.data?.error || 'Failed to create game');
     } finally {
@@ -119,6 +127,45 @@ function CreateGame() {
               <span>Street ($500)</span>
               <span>Couture ($10,000)</span>
             </div>
+          </div>
+
+          {/* Solo Mode Toggle */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '24px',
+          }}>
+            <button
+              type="button"
+              onClick={() => setFormData(prev => ({ ...prev, singlePlayer: !prev.singlePlayer }))}
+              style={{
+                width: '44px',
+                height: '24px',
+                borderRadius: '12px',
+                border: 'none',
+                background: formData.singlePlayer ? 'var(--primary-orange)' : 'var(--border-medium)',
+                position: 'relative',
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                flexShrink: 0,
+              }}
+            >
+              <div style={{
+                width: '18px',
+                height: '18px',
+                borderRadius: '50%',
+                background: 'white',
+                position: 'absolute',
+                top: '3px',
+                left: formData.singlePlayer ? '23px' : '3px',
+                transition: 'left 0.2s',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+              }} />
+            </button>
+            <span style={{ fontSize: '0.9rem', color: 'var(--text-dark)', fontWeight: 500 }}>
+              Solo Mode
+            </span>
           </div>
 
           {/* Launch Button */}

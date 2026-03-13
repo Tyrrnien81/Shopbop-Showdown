@@ -1,7 +1,9 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const crypto = require('crypto');
+const { Server } = require('socket.io');
 const db = require('./db');
 
 const app = express();
@@ -21,6 +23,8 @@ const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/
 const SHOPBOP_API_BASE = 'https://api.shopbop.com';
 // Client-ID provided by Shopbop for UW Capstone - can be overridden via env
 const SHOPBOP_CLIENT_ID = process.env.SHOPBOP_CLIENT_ID || 'Shopbop-UW-Team1-2024';
+
+let io;
 
 // ============================================================
 // UTILITY FUNCTIONS
@@ -55,8 +59,8 @@ const THEME_QUERIES = {
   beach: 'swimwear resort beach dress',
 };
 
-// Category ID → display name mapping
-const CATEGORIES = [
+// Category ID → display name mapping (per gender)
+const CATEGORIES_WOMENS = [
   { id: 'dresses', name: 'Dresses', queries: ['dresses'] },
   { id: 'tops', name: 'Tops', queries: ['tops', 'blouses', 'shirts'] },
   { id: 'bottoms', name: 'Bottoms', queries: ['pants', 'jeans', 'skirts'] },
@@ -65,6 +69,19 @@ const CATEGORIES = [
   { id: 'outerwear', name: 'Outerwear', queries: ['jackets', 'coats', 'blazers'] },
   { id: 'accessories', name: 'Accessories', queries: ['bags', 'scarves', 'hats'] },
 ];
+
+const CATEGORIES_MENS = [
+  { id: 'tops', name: 'Tops', queries: ['shirts', 'tees', 'polos'] },
+  { id: 'bottoms', name: 'Bottoms', queries: ['pants', 'jeans', 'shorts', 'trousers'] },
+  { id: 'shoes', name: 'Shoes', queries: ['sneakers', 'boots', 'loafers'] },
+  { id: 'outerwear', name: 'Outerwear', queries: ['jackets', 'coats', 'blazers', 'hoodies'] },
+  { id: 'suits', name: 'Suits', queries: ['suits', 'blazers', 'dress shirts'] },
+  { id: 'accessories', name: 'Accessories', queries: ['watches', 'bags', 'belts', 'hats'] },
+];
+
+function getCategories(dept) {
+  return dept === 'MENS' ? CATEGORIES_MENS : CATEGORIES_WOMENS;
+}
 
 // ============================================================
 // SHOPBOP API PROXY HELPERS
@@ -174,11 +191,12 @@ function normalizeProduct(item) {
 }
 
 // Search Shopbop and return normalized products
-async function searchShopbop(query, limit = 20, offset = 0, { sort, minPrice, maxPrice } = {}) {
+async function searchShopbop(query, limit = 20, offset = 0, { sort, minPrice, maxPrice, dept } = {}) {
   const params = { q: query, limit, offset };
   if (sort) params.sort = sort;
   if (minPrice) params.minPrice = minPrice;
   if (maxPrice) params.maxPrice = maxPrice;
+  if (dept) params.dept = dept;
   const data = await shopbopFetch('/public/search', params);
   const rawProducts = data.products || data.results || data.items || [];
   if (rawProducts.length > 0) {
@@ -206,50 +224,59 @@ app.get('/api/health', (req, res) => {
 
 // GET /api/categories — static category list
 app.get('/api/categories', (req, res) => {
+  const dept = req.query.dept === 'MENS' ? 'MENS' : 'WOMENS';
+  const cats = getCategories(dept);
   res.json({
-    categories: CATEGORIES.map(({ id, name }) => ({ id, name })),
+    categories: cats.map(({ id, name }) => ({ id, name })),
   });
 });
 
 // GET /api/products/search
 app.get('/api/products/search', async (req, res) => {
   try {
-    const { query, category, minPrice, maxPrice, page = 1, limit = 20, theme, sort, color } = req.query;
+    const { query, category, minPrice, maxPrice, page = 1, limit = 20, theme, sort, color, dept } = req.query;
     const pageNum = parseInt(page);
     const limitNum = Math.min(parseInt(limit), 50);
     const offset = (pageNum - 1) * limitNum;
+    const activeDept = dept === 'MENS' ? 'MENS' : 'WOMENS';
+    const CATEGORIES = getCategories(activeDept);
 
     // Build options to forward to the Shopbop API
-    const opts = {};
+    const opts = { dept: activeDept };
     if (sort) opts.sort = sort;
     if (minPrice) opts.minPrice = minPrice;
     if (maxPrice) opts.maxPrice = maxPrice;
 
     // Color is prepended to the search query text (no native colors param)
     const colorPrefix = color && color !== 'All' ? `${color} ` : '';
+    // Gender prefix to steer text search toward men's or women's products
+    const genderPrefix = activeDept === 'MENS' ? 'mens ' : '';
 
     let products = [];
     let total = 0;
 
     if (query) {
       // Direct text search
-      const result = await searchShopbop(`${colorPrefix}${query}`, limitNum, offset, opts);
+      const result = await searchShopbop(`${genderPrefix}${colorPrefix}${query}`, limitNum, offset, opts);
       products = result.products;
       total = result.total;
 
     } else if (category) {
       // Category-specific search — fire one search per keyword for reliability
       const cat = CATEGORIES.find(c => c.id === category.toLowerCase() || c.name.toLowerCase() === category.toLowerCase());
+      const categoryName = cat ? cat.name : category;
       const queries = cat ? cat.queries : [category];
       const perQueryLimit = Math.max(Math.ceil(limitNum / queries.length), 8);
 
       const fetches = queries.map(q =>
-        searchShopbop(`${colorPrefix}${q}`, perQueryLimit, offset, opts)
+        searchShopbop(`${genderPrefix}${colorPrefix}${q}`, perQueryLimit, offset, opts)
           .then(r => r.products)
           .catch(() => [])
       );
       const results = await Promise.all(fetches);
       products = results.flat();
+      // Override category to match what was requested (guessCategory can misclassify)
+      products = products.map(p => ({ ...p, category: categoryName }));
       // Deduplicate by productSin
       const seen = new Set();
       products = products.filter(p => {
@@ -265,7 +292,7 @@ app.get('/api/products/search', async (req, res) => {
       const perCategoryLimit = Math.ceil(limitNum / CATEGORIES.length);
 
       const fetches = CATEGORIES.map(cat =>
-        searchShopbop(`${colorPrefix}${themeQuery} ${cat.queries[0]}`, perCategoryLimit, 0, opts)
+        searchShopbop(`${genderPrefix}${colorPrefix}${themeQuery} ${cat.queries[0]}`, perCategoryLimit, 0, opts)
           .then(r => r.products)
           .catch(() => [])
       );
@@ -275,7 +302,7 @@ app.get('/api/products/search', async (req, res) => {
 
     } else {
       // General fashion search fallback
-      const result = await searchShopbop(`${colorPrefix}fashion`, limitNum, offset, opts);
+      const result = await searchShopbop(`${genderPrefix}${colorPrefix}fashion`, limitNum, offset, opts);
       products = result.products;
       total = result.total;
     }
@@ -311,7 +338,7 @@ app.get('/api/products/:productSin', async (req, res) => {
 // POST /api/games — create a new game
 app.post('/api/games', async (req, res) => {
   try {
-    const { hostUsername, theme, budget, maxPlayers, timeLimit } = req.body;
+    const { hostUsername, theme, budget, maxPlayers, timeLimit, singlePlayer } = req.body;
 
     if (!hostUsername || !theme) {
       return res.status(400).json({ error: 'hostUsername and theme are required' });
@@ -346,6 +373,7 @@ app.post('/api/games', async (req, res) => {
       startedAt: null,
       endsAt: null,
       endedAt: null,
+      singlePlayer: Boolean(singlePlayer),
     };
 
     await Promise.all([
@@ -406,6 +434,10 @@ app.post('/api/games/:gameId/join', async (req, res) => {
     const gamePlayers = await db.getPlayersByGameId(game.gameId);
     const updatedGame = await db.getGame(game.gameId);
     console.log(`${username} joined game ${game.gameId}`);
+
+    // Notify all clients in the room
+    if (io) io.to(game.gameId).emit('player-joined', { players: gamePlayers });
+
     res.json({ player, game: { ...updatedGame, players: gamePlayers } });
   } catch (err) {
     console.error('Join game error:', err.message);
@@ -424,6 +456,11 @@ app.post('/api/games/:gameId/ready', async (req, res) => {
     if (!player || player.gameId !== game.gameId) return res.status(404).json({ error: 'Player not found in this game' });
 
     const updated = await db.updatePlayer(playerId, { isReady: Boolean(isReady) });
+
+    // Notify all clients in the room
+    const gamePlayers = await db.getPlayersByGameId(game.gameId);
+    if (io) io.to(game.gameId).emit('player-ready-changed', { playerId, isReady: updated.isReady, players: gamePlayers });
+
     res.json({ success: true, player: updated });
   } catch (err) {
     console.error('Ready toggle error:', err.message);
@@ -445,6 +482,10 @@ app.post('/api/games/:gameId/start', async (req, res) => {
     });
 
     console.log(`Game ${game.gameId} started`);
+
+    // Notify all clients in the room
+    if (io) io.to(game.gameId).emit('game-started', { gameId: game.gameId, startedAt: updatedGame.startedAt, endsAt: updatedGame.endsAt, timeLimit: game.timeLimit });
+
     res.json({ success: true, game: updatedGame });
   } catch (err) {
     console.error('Start game error:', err.message);
@@ -473,14 +514,26 @@ app.get('/api/games/:gameId/players', async (req, res) => {
 // POST /api/outfits — submit outfit
 app.post('/api/outfits', async (req, res) => {
   try {
-    const { gameId, playerId, products: outfitProducts, totalPrice } = req.body;
+    const { gameId, playerId, products: outfitProducts, totalPrice, tryOnImage } = req.body;
 
     const game = await db.getGame(gameId);
     if (!game) return res.status(404).json({ error: 'Game not found' });
 
     const player = await db.getPlayer(playerId);
     if (!player || player.gameId !== gameId) return res.status(404).json({ error: 'Player not found in this game' });
-    if (player.hasSubmitted) return res.status(400).json({ error: 'Outfit already submitted' });
+
+    // Allow re-submission: update existing outfit if player already submitted
+    if (player.hasSubmitted && player.outfitId) {
+      const submittedAt = new Date().toISOString();
+      await db.updateOutfit(player.outfitId, {
+        products: outfitProducts || [],
+        totalPrice: totalPrice || 0,
+        tryOnImage: tryOnImage || null,
+        submittedAt,
+      });
+      console.log(`Outfit ${player.outfitId} re-submitted by player ${playerId}`);
+      return res.status(200).json({ outfitId: player.outfitId, submittedAt });
+    }
 
     const outfitId = generateId();
     const outfit = {
@@ -489,6 +542,7 @@ app.post('/api/outfits', async (req, res) => {
       playerId,
       products: outfitProducts || [],
       totalPrice: totalPrice || 0,
+      tryOnImage: tryOnImage || null,
       submittedAt: new Date().toISOString(),
     };
 
@@ -497,14 +551,25 @@ app.post('/api/outfits', async (req, res) => {
       db.updatePlayer(playerId, { hasSubmitted: true, outfitId }),
     ]);
 
-    // Auto-advance to VOTING if all players submitted
+    // Auto-advance when all players have submitted
     const gamePlayers = await db.getPlayersByGameId(gameId);
     if (gamePlayers.every(p => p.hasSubmitted)) {
-      await db.updateGameStatus(gameId, 'VOTING');
-      console.log(`Game ${gameId} moved to VOTING phase`);
+      if (game.singlePlayer) {
+        await db.updateGameStatus(gameId, 'COMPLETED', { endedAt: new Date().toISOString() });
+        console.log(`Solo game ${gameId} completed (skipping voting)`);
+      } else {
+        await db.updateGameStatus(gameId, 'VOTING');
+        console.log(`Game ${gameId} moved to VOTING phase`);
+      }
     }
 
     console.log(`Outfit ${outfitId} submitted by player ${playerId}`);
+
+    // Notify all clients in the room
+    const updatedGame = await db.getGame(gameId);
+    const submittedCount = gamePlayers.filter(p => p.hasSubmitted).length;
+    if (io) io.to(gameId).emit('outfit-submitted', { submittedCount, totalPlayers: gamePlayers.length, gameStatus: updatedGame.status });
+
     res.status(201).json({ outfitId, submittedAt: outfit.submittedAt });
   } catch (err) {
     console.error('Submit outfit error:', err.message);
@@ -528,6 +593,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           outfitId: outfit.outfitId,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
+          tryOnImage: outfit.tryOnImage || null,
         });
       } else {
         // Include player info for completed games
@@ -538,6 +604,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           playerName: player?.username,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
+          tryOnImage: outfit.tryOnImage || null,
         });
       }
     }
@@ -586,6 +653,9 @@ app.post('/api/votes', async (req, res) => {
       console.log(`Game ${gameId} completed`);
     }
 
+    // Notify all clients in the room
+    if (io) io.to(gameId).emit('vote-submitted', { votesRemaining, isComplete: votesRemaining === 0 });
+
     res.json({ success: true, votesRemaining });
   } catch (err) {
     console.error('Submit votes error:', err.message);
@@ -630,8 +700,22 @@ app.get('/api/games/:gameId/results', async (req, res) => {
         totalVotes: count,
         products: outfit.products,
         totalPrice: outfit.totalPrice,
+        tryOnImage: outfit.tryOnImage || null,
       };
     });
+
+    // Single-player: generate a synthetic style score
+    if (game.singlePlayer) {
+      results.forEach(r => {
+        const itemCount = r.products.length;
+        const budgetEfficiency = Math.min(r.totalPrice / game.budget, 1);
+        const categorySet = new Set(r.products.map(p => p.category));
+        const variety = categorySet.size;
+        // Score: reward variety (up to 5 categories) and budget usage
+        r.score = parseFloat(Math.min((variety * 0.7 + budgetEfficiency * 1.5 + itemCount * 0.2), 5).toFixed(1));
+        r.totalVotes = 1;
+      });
+    }
 
     results.sort((a, b) => b.score - a.score || b.totalVotes - a.totalVotes);
     results.forEach((r, i) => { r.rank = i + 1; });
@@ -1064,7 +1148,29 @@ app.post('/api/avatar/generate', async (req, res) => {
 // START SERVER
 // ============================================================
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] },
+});
+
+io.on('connection', (socket) => {
+  console.log(`Socket connected: ${socket.id}`);
+
+  socket.on('join-room', ({ gameId, playerId }) => {
+    if (gameId) {
+      socket.join(gameId);
+      socket.data.gameId = gameId;
+      socket.data.playerId = playerId;
+      console.log(`Socket ${socket.id} joined room ${gameId}`);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`Socket disconnected: ${socket.id}`);
+  });
+});
+
+server.listen(PORT, () => {
   console.log(`Backend server running on http://localhost:${PORT}`);
   if (!GEMINI_API_KEY) console.warn('WARNING: GEMINI_API_KEY not set');
   if (!process.env.SHOPBOP_API_KEY) console.warn('WARNING: SHOPBOP_API_KEY not set — using client-id only');

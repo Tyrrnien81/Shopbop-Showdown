@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { voteApi } from '../services/api';
 import useGameStore from '../store/gameStore';
+import socketService from '../services/socket';
 
 // Mock results for development
 const mockResults = [
@@ -48,13 +49,49 @@ const mockResults = [
 function Results() {
   const { gameId } = useParams();
   const navigate = useNavigate();
-  const { results, setResults, resetGame } = useGameStore();
+  const { results, setResults, resetGame, isSinglePlayer } = useGameStore();
   const [isLoading, setIsLoadingLocal] = useState(true);
-  const [modelView, setModelView] = useState({}); // outfitId → true means show model image
+  const [expandedItems, setExpandedItems] = useState({}); // outfitId → true means show items dropdown
+  const confettiRef = useRef(null);
 
-  const toggleView = (outfitId) => {
-    setModelView(prev => ({ ...prev, [outfitId]: !prev[outfitId] }));
+  const toggleItems = (outfitId) => {
+    setExpandedItems(prev => ({ ...prev, [outfitId]: !prev[outfitId] }));
   };
+
+  const launchConfetti = useCallback(() => {
+    const container = confettiRef.current;
+    if (!container) return;
+    container.innerHTML = '';
+    const colors = ['#EE4A1B', '#FFD700', '#FF6B6B', '#4ECDC4', '#A855F7', '#F472B6', '#FBBF24', '#34D399'];
+    const shapes = ['circle', 'square', 'strip'];
+    for (let i = 0; i < 120; i++) {
+      const piece = document.createElement('div');
+      const shape = shapes[Math.floor(Math.random() * shapes.length)];
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      const left = Math.random() * 100;
+      const delay = Math.random() * 0.6;
+      const duration = 2.5 + Math.random() * 2;
+      const drift = (Math.random() - 0.5) * 200;
+      const spin = Math.random() * 720 - 360;
+
+      piece.className = `confetti-piece confetti-${shape}`;
+      piece.style.cssText = `
+        left: ${left}%;
+        background: ${color};
+        animation-delay: ${delay}s;
+        animation-duration: ${duration}s;
+        --drift: ${drift}px;
+        --spin: ${spin}deg;
+      `;
+      container.appendChild(piece);
+    }
+    // Clean up after animation
+    setTimeout(() => { if (container) container.innerHTML = ''; }, 4500);
+  }, []);
+
+  useEffect(() => {
+    socketService.disconnect();
+  }, []);
 
   useEffect(() => {
     fetchResults();
@@ -67,10 +104,10 @@ function Results() {
       const fetched = response.data.results || [];
       setResults(fetched.length > 0 ? fetched : mockResults);
     } catch {
-      // Fall back to mock data if API unavailable
       setResults(mockResults);
     } finally {
       setIsLoadingLocal(false);
+      setTimeout(() => launchConfetti(), 300);
     }
   };
 
@@ -109,9 +146,12 @@ function Results() {
 
   return (
     <div className="results-container">
+      {/* Confetti */}
+      <div className="confetti-container" ref={confettiRef} />
+
       {/* Header */}
       <header className="results-header">
-        <h1>The Results Are In</h1>
+        <h1>{isSinglePlayer ? 'Your Look' : 'The Results Are In'}</h1>
       </header>
 
       {/* Winner Podium */}
@@ -119,42 +159,62 @@ function Results() {
         {topThree.map((result, index) => {
           const placeClass = index === 0 ? 'first' : index === 1 ? 'second' : 'third';
           const emoji = index === 0 ? '👑' : index === 1 ? '🥈' : '🥉';
+          const isExpanded = expandedItems[result.outfitId];
 
           return (
             <div key={result.outfitId} className={`podium-place ${placeClass}`}>
-              {/* Outfit Preview */}
-              <div
-                className="podium-outfit"
-                onClick={() => result.tryOnImage && toggleView(result.outfitId)}
-                style={result.tryOnImage ? { cursor: 'pointer' } : {}}
-                title={result.tryOnImage ? (modelView[result.outfitId] ? 'Click to see items' : 'Click to see model') : undefined}
-              >
-                {result.tryOnImage && modelView[result.outfitId] ? (
+              {/* Main Image — AI generated or product grid fallback */}
+              <div className="podium-outfit">
+                {result.tryOnImage ? (
                   <img
                     src={result.tryOnImage}
-                    alt={`${result.username}'s model look`}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '8px' }}
+                    alt={`${result.username}'s look`}
+                    className="podium-model-img"
+                    referrerPolicy="no-referrer"
                   />
                 ) : (
                   <div className="podium-outfit-grid">
                     {result.products.slice(0, 4).map((product) => (
                       <div key={product.productSin} className="podium-outfit-item">
-                        <img src={product.imageUrl} alt={product.name} />
+                        <img src={product.imageUrl} alt={product.name} referrerPolicy="no-referrer" />
                       </div>
                     ))}
                   </div>
                 )}
-                {result.tryOnImage && (
-                  <div style={{
-                    position: 'absolute', bottom: '4px', right: '4px',
-                    background: 'rgba(0,0,0,0.55)', borderRadius: '4px',
-                    padding: '2px 6px', fontSize: '0.65rem', color: 'white',
-                    pointerEvents: 'none',
-                  }}>
-                    {modelView[result.outfitId] ? 'items' : 'model'} →
-                  </div>
-                )}
               </div>
+
+              {/* View Items Toggle */}
+              <button
+                className={`view-items-btn ${isExpanded ? 'expanded' : ''}`}
+                onClick={() => toggleItems(result.outfitId)}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="7" height="7" />
+                  <rect x="14" y="3" width="7" height="7" />
+                  <rect x="3" y="14" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" />
+                </svg>
+                {isExpanded ? 'Hide Items' : `${result.products.length} Items`}
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                  style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+
+              {/* Items Dropdown */}
+              {isExpanded && (
+                <div className="items-dropdown">
+                  {result.products.map((product) => (
+                    <div key={product.productSin} className="items-dropdown-item">
+                      <img src={product.imageUrl} alt={product.name} referrerPolicy="no-referrer" />
+                      <div className="items-dropdown-info">
+                        <span className="items-dropdown-name">{product.name}</span>
+                        <span className="items-dropdown-price">${product.price.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Rank Emoji */}
               <div className="podium-rank">{emoji}</div>
@@ -179,41 +239,57 @@ function Results() {
       {restOfResults.length > 0 && (
         <div className="results-rest">
           <h3>Other Submissions</h3>
-          {restOfResults.map((result) => (
-            <div key={result.outfitId} className="result-item">
-              <div className="result-rank">#{result.rank}</div>
-              <div
-                className="result-outfit-preview"
-                onClick={() => result.tryOnImage && toggleView(result.outfitId)}
-                style={result.tryOnImage ? { cursor: 'pointer', position: 'relative' } : {}}
-                title={result.tryOnImage ? (modelView[result.outfitId] ? 'Click to see items' : 'Click to see model') : undefined}
-              >
-                {result.tryOnImage && modelView[result.outfitId] ? (
-                  <img
-                    src={result.tryOnImage}
-                    alt={`${result.username}'s model look`}
-                    style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px' }}
-                  />
-                ) : (
-                  result.products.slice(0, 4).map((product) => (
-                    <img
-                      key={product.productSin}
-                      src={product.imageUrl}
-                      alt={product.name}
-                    />
-                  ))
+          {restOfResults.map((result) => {
+            const isExpanded = expandedItems[result.outfitId];
+            return (
+              <div key={result.outfitId} className="result-item-wrapper">
+                <div className="result-item">
+                  <div className="result-rank">#{result.rank}</div>
+                  <div className="result-outfit-preview">
+                    {result.tryOnImage ? (
+                      <img
+                        src={result.tryOnImage}
+                        alt={`${result.username}'s look`}
+                        style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px' }}
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      result.products.slice(0, 4).map((product) => (
+                        <img key={product.productSin} src={product.imageUrl} alt={product.name} referrerPolicy="no-referrer" />
+                      ))
+                    )}
+                  </div>
+                  <div className="result-info">
+                    <div className="result-player-name">{result.username}</div>
+                    <div className="result-item-count">{result.products.length} items</div>
+                  </div>
+                  <div className="result-score">
+                    <span>★</span>
+                    <span>{result.score.toFixed(1)}</span>
+                  </div>
+                  <button className="view-items-btn-sm" onClick={() => toggleItems(result.outfitId)}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                      style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </button>
+                </div>
+                {isExpanded && (
+                  <div className="items-dropdown items-dropdown-horizontal">
+                    {result.products.map((product) => (
+                      <div key={product.productSin} className="items-dropdown-item">
+                        <img src={product.imageUrl} alt={product.name} referrerPolicy="no-referrer" />
+                        <div className="items-dropdown-info">
+                          <span className="items-dropdown-name">{product.name}</span>
+                          <span className="items-dropdown-price">${product.price.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-              <div className="result-info">
-                <div className="result-player-name">{result.username}</div>
-                <div className="result-item-count">{result.products.length} items</div>
-              </div>
-              <div className="result-score">
-                <span>★</span>
-                <span>{result.score.toFixed(1)}</span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
