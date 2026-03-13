@@ -1,4 +1,4 @@
-const { PutCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('./dynamoClient');
 
 const TABLE = 'Votes';
@@ -21,4 +21,17 @@ async function getVotesByGameId(gameId) {
   return Items || [];
 }
 
-module.exports = { createVote, getVotesByGameId };
+async function scanAllVotes() {
+  const items = [];
+  let lastKey;
+  do {
+    const params = { TableName: TABLE };
+    if (lastKey) params.ExclusiveStartKey = lastKey;
+    const { Items, LastEvaluatedKey } = await docClient.send(new ScanCommand(params));
+    items.push(...(Items || []));
+    lastKey = LastEvaluatedKey;
+  } while (lastKey);
+  return items;
+}
+
+module.exports = { createVote, getVotesByGameId, scanAllVotes };
