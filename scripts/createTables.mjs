@@ -1,6 +1,23 @@
+// Run from project root: node --env-file=backend/.env scripts/createTables.mjs
+// Or from backend dir:   cd backend && node --env-file=.env ../scripts/createTables.mjs
+
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
+// Load .env from backend/ if not already loaded
+try { require('dotenv').config({ path: new URL('../backend/.env', import.meta.url).pathname }); } catch {}
+
 import { DynamoDBClient, CreateTableCommand } from "@aws-sdk/client-dynamodb";
 
-const client = new DynamoDBClient({ region: "us-east-1" });
+const client = new DynamoDBClient({
+  region: process.env.AWS_REGION || "us-east-1",
+  ...(process.env.AWS_ACCESS_KEY_ID && {
+    credentials: {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    },
+  }),
+});
 
 const tables = [
   {
@@ -59,15 +76,20 @@ const tables = [
   },
 ];
 
+console.log(`Creating tables in region: ${process.env.AWS_REGION || 'us-east-1'}...`);
+
 for (const table of tables) {
   try {
     await client.send(new CreateTableCommand(table));
-    console.log(`✅ Created: ${table.TableName}`);
+    console.log(`Created: ${table.TableName}`);
   } catch (e) {
     if (e.name === "ResourceInUseException") {
-      console.log(`⚠️  Already exists: ${table.TableName}`);
+      console.log(`Already exists: ${table.TableName}`);
     } else {
+      console.error(`Failed to create ${table.TableName}:`, e.message);
       throw e;
     }
   }
 }
+
+console.log('Done!');
