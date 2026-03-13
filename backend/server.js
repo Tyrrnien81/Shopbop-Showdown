@@ -5,6 +5,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const { Server } = require('socket.io');
 const db = require('./db');
+const analyticsRouter = require('./routes/analytics');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,6 +13,9 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Admin routes (auth-gated, outside game state machine)
+app.use('/api/admin', analyticsRouter);
 
 // ============================================================
 // CONFIGURATION
