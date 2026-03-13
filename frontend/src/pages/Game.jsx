@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { generateTryOnImage, generateSingleTryOnImage } from '../services/geminiApi';
 import { productApi, outfitApi, chatApi, avatarApi, gameApi } from '../services/api';
 import useGameStore from '../store/gameStore';
+import socketService from '../services/socket';
 
 // Sort options supported by the Shopbop API
 const SORT_OPTIONS = [
@@ -88,6 +89,10 @@ function Game() {
   // Wallet spend animation
   const [walletSpend, setWalletSpend] = useState(false);
 
+  // Waiting room state
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [submissionStatus, setSubmissionStatus] = useState({ submitted: 0, total: 0 });
+
   // Chat assistant state
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([
@@ -103,6 +108,28 @@ function Game() {
 
   const budget = game?.budget || 5000;
   const theme = game?.theme || 'Runway Ready';
+
+  // Ensure socket is connected and listen for outfit submissions
+  useEffect(() => {
+    const { currentPlayer } = useGameStore.getState();
+    if (currentPlayer?.playerId) {
+      socketService.connect(gameId, currentPlayer.playerId);
+    }
+
+    const onOutfitSubmitted = ({ gameStatus, submittedCount, totalPlayers }) => {
+      if (submittedCount != null && totalPlayers != null) {
+        setSubmissionStatus({ submitted: submittedCount, total: totalPlayers });
+      }
+      if (gameStatus === 'VOTING') {
+        navigate(`/voting/${gameId}`);
+      } else if (gameStatus === 'COMPLETED') {
+        navigate(`/results/${gameId}`);
+      }
+    };
+
+    socketService.on('outfit-submitted', onOutfitSubmitted);
+    return () => socketService.off('outfit-submitted', onOutfitSubmitted);
+  }, [gameId, navigate]);
 
   const handleApplyPrice = () => {
     setAppliedMinPrice(minPrice);
@@ -408,7 +435,11 @@ function Game() {
         });
       }
       const { isSinglePlayer } = useGameStore.getState();
-      navigate(isSinglePlayer ? `/results/${gameId}` : `/voting/${gameId}`);
+      if (isSinglePlayer) {
+        navigate(`/results/${gameId}`);
+      } else {
+        setHasSubmitted(true);
+      }
     } catch {
       setPopupMessage('Failed to submit outfit');
     } finally {
@@ -493,6 +524,24 @@ function Game() {
   const budgetRemaining = budget - currentOutfit.totalPrice;
   const budgetPercentage = (currentOutfit.totalPrice / budget) * 100;
   const isOutfitComplete = validationErrors.length === 0 && currentOutfit.products.length > 0;
+
+  // Waiting room: show after multiplayer submission while waiting for others
+  if (hasSubmitted && !isSinglePlayer) {
+    return (
+      <div className="game-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <div style={{ textAlign: 'center', padding: '2rem' }}>
+          <div className="spinner" style={{ width: 48, height: 48, border: '4px solid #e0e0e0', borderTop: '4px solid #000', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 1.5rem' }} />
+          <h2 style={{ marginBottom: '0.5rem' }}>Waiting for other players to finish shopping...</h2>
+          {submissionStatus.total > 0 && (
+            <p style={{ color: '#666', fontSize: '1.1rem' }}>
+              {submissionStatus.submitted} of {submissionStatus.total} players submitted
+            </p>
+          )}
+        </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
 
   return (
     <div className="game-container">

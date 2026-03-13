@@ -1,0 +1,32 @@
+services:
+  # Backend API + WebSocket server
+  - type: web
+    name: shopbop-showdown-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false  # set manually in Render dashboard
+      - key: SHOPBOP_CLIENT_ID
+        value: Shopbop-UW-Team1-2024
+
+  # Frontend static site
+  - type: web
+    name: shopbop-showdown
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://shopbop-showdown-api.onrender.com/api
+      - key: VITE_BACKEND_URL
+        value: https://shopbop-showdown-api.onrender.com
+      - key: VITE_WS_URL
+        value: https://shopbop-showdown-api.onrender.com

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { voteApi } from '../services/api';
 import useGameStore from '../store/gameStore';
+import socketService from '../services/socket';
 
 // Mock results for development
 const mockResults = [
@@ -136,6 +137,10 @@ function Results() {
 
     revealTimers.current = [t1, t2, t3, t4];
   }, [launchConfetti]);
+
+  useEffect(() => {
+    socketService.disconnect();
+  }, []);
 
   useEffect(() => {
     fetchResults();

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { gameApi, avatarApi } from '../services/api';
 import useGameStore from '../store/gameStore';
+import socketService from '../services/socket';
 
 function Lobby() {
   const { gameId } = useParams();
@@ -25,7 +26,6 @@ function Lobby() {
   const [joining, setJoining] = useState(false);
   const [joinUsername, setJoinUsername] = useState('');
   const [showJoinForm, setShowJoinForm] = useState(false);
-  const pollRef = useRef(null);
   const hasJoinedRef = useRef(false); // guard against StrictMode double-invoke
   const fileInputRef = useRef(null);
 
@@ -43,6 +43,33 @@ function Lobby() {
 
   const isHost = currentPlayer?.isHost ?? false;
 
+  // Connect socket and set up listeners when we have a player in this game
+  useEffect(() => {
+    if (!currentPlayer?.playerId || currentPlayer?.gameId !== gameId) return;
+
+    socketService.connect(gameId, currentPlayer.playerId);
+
+    const onPlayerJoined = ({ players: updatedPlayers }) => {
+      setPlayers(updatedPlayers);
+    };
+    const onPlayerReadyChanged = ({ players: updatedPlayers }) => {
+      setPlayers(updatedPlayers);
+    };
+    const onGameStarted = () => {
+      navigate(`/game/${gameId}`);
+    };
+
+    socketService.on('player-joined', onPlayerJoined);
+    socketService.on('player-ready-changed', onPlayerReadyChanged);
+    socketService.on('game-started', onGameStarted);
+
+    return () => {
+      socketService.off('player-joined', onPlayerJoined);
+      socketService.off('player-ready-changed', onPlayerReadyChanged);
+      socketService.off('game-started', onGameStarted);
+    };
+  }, [currentPlayer?.playerId, gameId, navigate, setPlayers]);
+
   useEffect(() => {
     // Clear any stale errors from previous pages
     setError(null);
@@ -52,31 +79,14 @@ function Lobby() {
       hasJoinedRef.current = true;
       handleJoinGame(username);
     } else if (currentPlayer?.gameId === gameId) {
-      // Already in game — just fetch fresh data and start polling
+      // Already in game — just fetch fresh data
       fetchGameData();
-      startPolling();
     } else {
       // Landed directly on lobby URL — show join form
       fetchGameData();
       setShowJoinForm(true);
     }
-
-    return () => stopPolling();
   }, [gameId]);
-
-  const startPolling = () => {
-    stopPolling();
-    pollRef.current = setInterval(() => {
-      fetchGameData(true); // silent=true so we don't show loading spinner
-    }, 2500);
-  };
-
-  const stopPolling = () => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  };
 
   const fetchGameData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -88,7 +98,6 @@ function Lobby() {
 
       // If game started, navigate to game page
       if (data.status === 'PLAYING') {
-        stopPolling();
         navigate(`/game/${gameId}`);
       }
     } catch {
@@ -107,7 +116,6 @@ function Lobby() {
       setGame(joinedGame);
       setPlayers(joinedGame.players || []);
       setShowJoinForm(false);
-      startPolling();
     } catch (error) {
       setError(error.response?.data?.error || 'Failed to join game');
     } finally {
@@ -133,7 +141,6 @@ function Lobby() {
     setLoading(true);
     try {
       await gameApi.startGame(gameId);
-      stopPolling();
       navigate(`/game/${gameId}`);
     } catch (error) {
       setError(error.response?.data?.error || 'Failed to start game');

@@ -1,7 +1,10 @@
 require('dotenv').config();
 const express = require('express');
+const http = require('http');
 const cors = require('cors');
 const crypto = require('crypto');
+const { Server } = require('socket.io');
+const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,14 +24,7 @@ const SHOPBOP_API_BASE = 'https://api.shopbop.com';
 // Client-ID provided by Shopbop for UW Capstone - can be overridden via env
 const SHOPBOP_CLIENT_ID = process.env.SHOPBOP_CLIENT_ID || 'Shopbop-UW-Team1-2024';
 
-// ============================================================
-// IN-MEMORY DATA STORES
-// ============================================================
-
-const games = new Map();
-const players = new Map();
-const outfits = new Map();
-const votes = new Map();
+let io;
 
 // ============================================================
 // UTILITY FUNCTIONS
@@ -36,12 +32,9 @@ const votes = new Map();
 
 function generateGameId() {
   // 6-char alphanumeric code, avoiding confusing chars
+  // Collision is extremely unlikely with 30^6 = 729M possibilities
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let id;
-  do {
-    id = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-  } while (games.has(id));
-  return id;
+  return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
 function generateId() {
@@ -345,126 +338,175 @@ app.get('/api/products/:productSin', async (req, res) => {
 // ============================================================
 
 // POST /api/games — create a new game
-app.post('/api/games', (req, res) => {
-  const { hostUsername, theme, budget, maxPlayers, timeLimit, singlePlayer } = req.body;
+app.post('/api/games', async (req, res) => {
+  try {
+    const { hostUsername, theme, budget, maxPlayers, timeLimit, singlePlayer } = req.body;
 
-  if (!hostUsername || !theme) {
-    return res.status(400).json({ error: 'hostUsername and theme are required' });
+    if (!hostUsername || !theme) {
+      return res.status(400).json({ error: 'hostUsername and theme are required' });
+    }
+
+    const gameId = generateGameId();
+    const playerId = generateId();
+    const now = new Date().toISOString();
+
+    const player = {
+      playerId,
+      username: hostUsername,
+      isHost: true,
+      isReady: true,
+      hasSubmitted: false,
+      hasVoted: false,
+      gameId,
+      outfitId: null,
+    };
+
+    const game = {
+      gameId,
+      theme,
+      themeName: THEME_NAMES[theme] || theme,
+      budget: budget || 5000,
+      maxPlayers: maxPlayers || 4,
+      timeLimit: timeLimit || 300,
+      status: 'LOBBY',
+      hostPlayerId: playerId,
+      playerIds: [playerId],
+      createdAt: now,
+      startedAt: null,
+      endsAt: null,
+      endedAt: null,
+      singlePlayer: Boolean(singlePlayer),
+    };
+
+    await Promise.all([
+      db.createGame(game),
+      db.createPlayer(player),
+    ]);
+
+    console.log(`Game created: ${gameId} by ${hostUsername}`);
+    res.status(201).json({ game, player });
+  } catch (err) {
+    console.error('Create game error:', err.message);
+    res.status(500).json({ error: 'Failed to create game' });
   }
-
-  const gameId = generateGameId();
-  const playerId = generateId();
-  const now = new Date().toISOString();
-
-  const player = {
-    playerId,
-    username: hostUsername,
-    isHost: true,
-    isReady: true,
-    hasSubmitted: false,
-    hasVoted: false,
-    gameId,
-    outfitId: null,
-  };
-
-  const game = {
-    gameId,
-    theme,
-    themeName: THEME_NAMES[theme] || theme,
-    budget: budget || 5000,
-    maxPlayers: maxPlayers || 4,
-    timeLimit: timeLimit || 300,
-    status: 'LOBBY',
-    hostPlayerId: playerId,
-    playerIds: [playerId],
-    createdAt: now,
-    startedAt: null,
-    endsAt: null,
-    endedAt: null,
-    singlePlayer: Boolean(singlePlayer),
-  };
-
-  games.set(gameId, game);
-  players.set(playerId, player);
-
-  console.log(`Game created: ${gameId} by ${hostUsername}`);
-  res.status(201).json({ game, player });
 });
 
 // GET /api/games/:gameId — get game details
-app.get('/api/games/:gameId', (req, res) => {
-  const game = games.get(req.params.gameId);
-  if (!game) return res.status(404).json({ error: 'Game not found' });
+app.get('/api/games/:gameId', async (req, res) => {
+  try {
+    const game = await db.getGame(req.params.gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
 
-  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
-  res.json({ ...game, players: gamePlayers });
+    const gamePlayers = await db.getPlayersByGameId(game.gameId);
+    res.json({ ...game, players: gamePlayers });
+  } catch (err) {
+    console.error('Get game error:', err.message);
+    res.status(500).json({ error: 'Failed to get game' });
+  }
 });
 
 // POST /api/games/:gameId/join — join existing game
-app.post('/api/games/:gameId/join', (req, res) => {
-  const game = games.get(req.params.gameId);
-  if (!game) return res.status(404).json({ error: 'Game not found' });
-  if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game has already started' });
-  if (game.playerIds.length >= game.maxPlayers) return res.status(400).json({ error: 'Game is full' });
+app.post('/api/games/:gameId/join', async (req, res) => {
+  try {
+    const game = await db.getGame(req.params.gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+    if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game has already started' });
+    if (game.playerIds.length >= game.maxPlayers) return res.status(400).json({ error: 'Game is full' });
 
-  const { username } = req.body;
-  if (!username) return res.status(400).json({ error: 'username is required' });
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ error: 'username is required' });
 
-  const playerId = generateId();
-  const player = {
-    playerId,
-    username,
-    isHost: false,
-    isReady: false,
-    hasSubmitted: false,
-    hasVoted: false,
-    gameId: game.gameId,
-    outfitId: null,
-  };
+    const playerId = generateId();
+    const player = {
+      playerId,
+      username,
+      isHost: false,
+      isReady: false,
+      hasSubmitted: false,
+      hasVoted: false,
+      gameId: game.gameId,
+      outfitId: null,
+    };
 
-  game.playerIds.push(playerId);
-  players.set(playerId, player);
+    await Promise.all([
+      db.createPlayer(player),
+      db.appendPlayerId(game.gameId, playerId),
+    ]);
 
-  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
-  console.log(`${username} joined game ${game.gameId}`);
-  res.json({ player, game: { ...game, players: gamePlayers } });
+    const gamePlayers = await db.getPlayersByGameId(game.gameId);
+    const updatedGame = await db.getGame(game.gameId);
+    console.log(`${username} joined game ${game.gameId}`);
+
+    // Notify all clients in the room
+    if (io) io.to(game.gameId).emit('player-joined', { players: gamePlayers });
+
+    res.json({ player, game: { ...updatedGame, players: gamePlayers } });
+  } catch (err) {
+    console.error('Join game error:', err.message);
+    res.status(500).json({ error: 'Failed to join game' });
+  }
 });
 
 // POST /api/games/:gameId/ready — toggle ready status
-app.post('/api/games/:gameId/ready', (req, res) => {
-  const game = games.get(req.params.gameId);
-  if (!game) return res.status(404).json({ error: 'Game not found' });
+app.post('/api/games/:gameId/ready', async (req, res) => {
+  try {
+    const game = await db.getGame(req.params.gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
 
-  const { playerId, isReady } = req.body;
-  const player = players.get(playerId);
-  if (!player || player.gameId !== game.gameId) return res.status(404).json({ error: 'Player not found in this game' });
+    const { playerId, isReady } = req.body;
+    const player = await db.getPlayer(playerId);
+    if (!player || player.gameId !== game.gameId) return res.status(404).json({ error: 'Player not found in this game' });
 
-  player.isReady = Boolean(isReady);
-  res.json({ success: true, player });
+    const updated = await db.updatePlayer(playerId, { isReady: Boolean(isReady) });
+
+    // Notify all clients in the room
+    const gamePlayers = await db.getPlayersByGameId(game.gameId);
+    if (io) io.to(game.gameId).emit('player-ready-changed', { playerId, isReady: updated.isReady, players: gamePlayers });
+
+    res.json({ success: true, player: updated });
+  } catch (err) {
+    console.error('Ready toggle error:', err.message);
+    res.status(500).json({ error: 'Failed to update ready status' });
+  }
 });
 
 // POST /api/games/:gameId/start — start the game (host only)
-app.post('/api/games/:gameId/start', (req, res) => {
-  const game = games.get(req.params.gameId);
-  if (!game) return res.status(404).json({ error: 'Game not found' });
-  if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game already started' });
+app.post('/api/games/:gameId/start', async (req, res) => {
+  try {
+    const game = await db.getGame(req.params.gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+    if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game already started' });
 
-  const now = new Date();
-  game.status = 'PLAYING';
-  game.startedAt = now.toISOString();
-  game.endsAt = new Date(now.getTime() + game.timeLimit * 1000).toISOString();
+    const now = new Date();
+    const updatedGame = await db.updateGameStatus(game.gameId, 'PLAYING', {
+      startedAt: now.toISOString(),
+      endsAt: new Date(now.getTime() + game.timeLimit * 1000).toISOString(),
+    });
 
-  console.log(`Game ${game.gameId} started`);
-  res.json({ success: true, game });
+    console.log(`Game ${game.gameId} started`);
+
+    // Notify all clients in the room
+    if (io) io.to(game.gameId).emit('game-started', { gameId: game.gameId, startedAt: updatedGame.startedAt, endsAt: updatedGame.endsAt, timeLimit: game.timeLimit });
+
+    res.json({ success: true, game: updatedGame });
+  } catch (err) {
+    console.error('Start game error:', err.message);
+    res.status(500).json({ error: 'Failed to start game' });
+  }
 });
 
 // GET /api/games/:gameId/players — list players
-app.get('/api/games/:gameId/players', (req, res) => {
-  const game = games.get(req.params.gameId);
-  if (!game) return res.status(404).json({ error: 'Game not found' });
+app.get('/api/games/:gameId/players', async (req, res) => {
+  try {
+    const game = await db.getGame(req.params.gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
 
-  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
-  res.json({ players: gamePlayers });
+    const gamePlayers = await db.getPlayersByGameId(game.gameId);
+    res.json({ players: gamePlayers });
+  } catch (err) {
+    console.error('Get players error:', err.message);
+    res.status(500).json({ error: 'Failed to get players' });
+  }
 });
 
 // ============================================================
@@ -472,92 +514,108 @@ app.get('/api/games/:gameId/players', (req, res) => {
 // ============================================================
 
 // POST /api/outfits — submit outfit
-app.post('/api/outfits', (req, res) => {
-  const { gameId, playerId, products: outfitProducts, totalPrice, tryOnImage } = req.body;
+app.post('/api/outfits', async (req, res) => {
+  try {
+    const { gameId, playerId, products: outfitProducts, totalPrice, tryOnImage } = req.body;
 
-  const game = games.get(gameId);
-  if (!game) return res.status(404).json({ error: 'Game not found' });
+    const game = await db.getGame(gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
 
-  const player = players.get(playerId);
-  if (!player || player.gameId !== gameId) return res.status(404).json({ error: 'Player not found in this game' });
+    const player = await db.getPlayer(playerId);
+    if (!player || player.gameId !== gameId) return res.status(404).json({ error: 'Player not found in this game' });
 
-  // Allow re-submission: update existing outfit if player already submitted
-  if (player.hasSubmitted && player.outfitId) {
-    const existingOutfit = outfits.get(player.outfitId);
-    if (existingOutfit) {
-      existingOutfit.products = outfitProducts || [];
-      existingOutfit.totalPrice = totalPrice || 0;
-      existingOutfit.tryOnImage = tryOnImage || null;
-      existingOutfit.submittedAt = new Date().toISOString();
+    // Allow re-submission: update existing outfit if player already submitted
+    if (player.hasSubmitted && player.outfitId) {
+      const submittedAt = new Date().toISOString();
+      await db.updateOutfit(player.outfitId, {
+        products: outfitProducts || [],
+        totalPrice: totalPrice || 0,
+        tryOnImage: tryOnImage || null,
+        submittedAt,
+      });
       console.log(`Outfit ${player.outfitId} re-submitted by player ${playerId}`);
-      return res.status(200).json({ outfitId: player.outfitId, submittedAt: existingOutfit.submittedAt });
+      return res.status(200).json({ outfitId: player.outfitId, submittedAt });
     }
-  }
 
-  const outfitId = generateId();
-  const outfit = {
-    outfitId,
-    gameId,
-    playerId,
-    products: outfitProducts || [],
-    totalPrice: totalPrice || 0,
-    tryOnImage: tryOnImage || null,
-    submittedAt: new Date().toISOString(),
-  };
+    const outfitId = generateId();
+    const outfit = {
+      outfitId,
+      gameId,
+      playerId,
+      products: outfitProducts || [],
+      totalPrice: totalPrice || 0,
+      tryOnImage: tryOnImage || null,
+      submittedAt: new Date().toISOString(),
+    };
 
-  outfits.set(outfitId, outfit);
-  player.hasSubmitted = true;
-  player.outfitId = outfitId;
+    await Promise.all([
+      db.createOutfit(outfit),
+      db.updatePlayer(playerId, { hasSubmitted: true, outfitId }),
+    ]);
 
-  // Auto-advance when all players have submitted
-  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
-  if (gamePlayers.every(p => p.hasSubmitted)) {
-    if (game.singlePlayer) {
-      game.status = 'COMPLETED';
-      game.endedAt = new Date().toISOString();
-      console.log(`Solo game ${gameId} completed (skipping voting)`);
-    } else {
-      game.status = 'VOTING';
-      console.log(`Game ${gameId} moved to VOTING phase`);
+    // Auto-advance when all players have submitted
+    const gamePlayers = await db.getPlayersByGameId(gameId);
+    if (gamePlayers.every(p => p.hasSubmitted)) {
+      if (game.singlePlayer) {
+        await db.updateGameStatus(gameId, 'COMPLETED', { endedAt: new Date().toISOString() });
+        console.log(`Solo game ${gameId} completed (skipping voting)`);
+      } else {
+        await db.updateGameStatus(gameId, 'VOTING');
+        console.log(`Game ${gameId} moved to VOTING phase`);
+      }
     }
-  }
 
-  console.log(`Outfit ${outfitId} submitted by player ${playerId}`);
-  res.status(201).json({ outfitId, submittedAt: outfit.submittedAt });
+    console.log(`Outfit ${outfitId} submitted by player ${playerId}`);
+
+    // Notify all clients in the room
+    const updatedGame = await db.getGame(gameId);
+    const submittedCount = gamePlayers.filter(p => p.hasSubmitted).length;
+    if (io) io.to(gameId).emit('outfit-submitted', { submittedCount, totalPlayers: gamePlayers.length, gameStatus: updatedGame.status });
+
+    res.status(201).json({ outfitId, submittedAt: outfit.submittedAt });
+  } catch (err) {
+    console.error('Submit outfit error:', err.message);
+    res.status(500).json({ error: 'Failed to submit outfit' });
+  }
 });
 
 // GET /api/games/:gameId/outfits — get outfits (anonymized during voting)
-app.get('/api/games/:gameId/outfits', (req, res) => {
-  const game = games.get(req.params.gameId);
-  if (!game) return res.status(404).json({ error: 'Game not found' });
+app.get('/api/games/:gameId/outfits', async (req, res) => {
+  try {
+    const game = await db.getGame(req.params.gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
 
-  const gameOutfits = [];
-  for (const outfit of outfits.values()) {
-    if (outfit.gameId !== req.params.gameId) continue;
+    const rawOutfits = await db.getOutfitsByGameId(req.params.gameId);
 
-    if (game.status === 'VOTING') {
-      // Anonymized — no player info
-      gameOutfits.push({
-        outfitId: outfit.outfitId,
-        products: outfit.products,
-        totalPrice: outfit.totalPrice,
-        tryOnImage: outfit.tryOnImage || null,
-      });
-    } else {
-      // Include player info for completed games
-      const player = players.get(outfit.playerId);
-      gameOutfits.push({
-        outfitId: outfit.outfitId,
-        playerId: outfit.playerId,
-        playerName: player?.username,
-        products: outfit.products,
-        totalPrice: outfit.totalPrice,
-        tryOnImage: outfit.tryOnImage || null,
-      });
+    const gameOutfits = [];
+    for (const outfit of rawOutfits) {
+      if (game.status === 'VOTING') {
+        // Anonymized — no player info
+        gameOutfits.push({
+          outfitId: outfit.outfitId,
+          products: outfit.products,
+          totalPrice: outfit.totalPrice,
+          tryOnImage: outfit.tryOnImage || null,
+        });
+      } else {
+        // Include player info for completed games
+        const player = await db.getPlayer(outfit.playerId);
+        gameOutfits.push({
+          outfitId: outfit.outfitId,
+          playerId: outfit.playerId,
+          playerName: player?.username,
+          products: outfit.products,
+          totalPrice: outfit.totalPrice,
+          tryOnImage: outfit.tryOnImage || null,
+        });
+      }
     }
-  }
 
-  res.json({ outfits: gameOutfits });
+    res.json({ outfits: gameOutfits });
+  } catch (err) {
+    console.error('Get outfits error:', err.message);
+    res.status(500).json({ error: 'Failed to get outfits' });
+  }
 });
 
 // ============================================================
@@ -565,103 +623,119 @@ app.get('/api/games/:gameId/outfits', (req, res) => {
 // ============================================================
 
 // POST /api/votes — submit votes
-app.post('/api/votes', (req, res) => {
-  const { gameId, playerId, ratings } = req.body;
+app.post('/api/votes', async (req, res) => {
+  try {
+    const { gameId, playerId, ratings } = req.body;
 
-  const game = games.get(gameId);
-  if (!game) return res.status(404).json({ error: 'Game not found' });
+    const game = await db.getGame(gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
 
-  const player = players.get(playerId);
-  if (!player || player.gameId !== gameId) return res.status(404).json({ error: 'Player not found in this game' });
-  if (player.hasVoted) return res.status(400).json({ error: 'Already voted' });
-  if (!Array.isArray(ratings) || ratings.length === 0) return res.status(400).json({ error: 'ratings array is required' });
+    const player = await db.getPlayer(playerId);
+    if (!player || player.gameId !== gameId) return res.status(404).json({ error: 'Player not found in this game' });
+    if (player.hasVoted) return res.status(400).json({ error: 'Already voted' });
+    if (!Array.isArray(ratings) || ratings.length === 0) return res.status(400).json({ error: 'ratings array is required' });
 
-  for (const { outfitId, rating } of ratings) {
-    const voteId = generateId();
-    votes.set(voteId, { voteId, gameId, voterId: playerId, outfitId, rating: Number(rating) });
+    // Write all votes and update player in parallel
+    const voteWrites = ratings.map(({ outfitId, rating }) =>
+      db.createVote({ voteId: generateId(), gameId, voterId: playerId, outfitId, rating: Number(rating) })
+    );
+    await Promise.all([
+      ...voteWrites,
+      db.updatePlayer(playerId, { hasVoted: true }),
+    ]);
+
+    // Check if all players have voted
+    const gamePlayers = await db.getPlayersByGameId(gameId);
+    const votesRemaining = gamePlayers.filter(p => !p.hasVoted).length;
+
+    if (votesRemaining === 0) {
+      await db.updateGameStatus(gameId, 'COMPLETED', {
+        endedAt: new Date().toISOString(),
+      });
+      console.log(`Game ${gameId} completed`);
+    }
+
+    // Notify all clients in the room
+    if (io) io.to(gameId).emit('vote-submitted', { votesRemaining, isComplete: votesRemaining === 0 });
+
+    res.json({ success: true, votesRemaining });
+  } catch (err) {
+    console.error('Submit votes error:', err.message);
+    res.status(500).json({ error: 'Failed to submit votes' });
   }
-
-  player.hasVoted = true;
-
-  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
-  const votesRemaining = gamePlayers.filter(p => !p.hasVoted).length;
-
-  if (votesRemaining === 0) {
-    game.status = 'COMPLETED';
-    game.endedAt = new Date().toISOString();
-    console.log(`Game ${gameId} completed`);
-  }
-
-  res.json({ success: true, votesRemaining });
 });
 
 // GET /api/games/:gameId/results — get final results
-app.get('/api/games/:gameId/results', (req, res) => {
-  const game = games.get(req.params.gameId);
-  if (!game) return res.status(404).json({ error: 'Game not found' });
+app.get('/api/games/:gameId/results', async (req, res) => {
+  try {
+    const game = await db.getGame(req.params.gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
 
-  // Collect outfits for this game
-  const gameOutfits = [];
-  for (const outfit of outfits.values()) {
-    if (outfit.gameId === req.params.gameId) gameOutfits.push(outfit);
-  }
+    const [gameOutfits, gameVotes, gamePlayers] = await Promise.all([
+      db.getOutfitsByGameId(req.params.gameId),
+      db.getVotesByGameId(req.params.gameId),
+      db.getPlayersByGameId(req.params.gameId),
+    ]);
 
-  // Aggregate vote scores per outfit
-  const scoreMap = new Map(); // outfitId → { total, count }
-  for (const vote of votes.values()) {
-    if (vote.gameId !== req.params.gameId) continue;
-    const entry = scoreMap.get(vote.outfitId) || { total: 0, count: 0 };
-    entry.total += vote.rating;
-    entry.count += 1;
-    scoreMap.set(vote.outfitId, entry);
-  }
+    // Aggregate vote scores per outfit
+    const scoreMap = new Map();
+    for (const vote of gameVotes) {
+      const entry = scoreMap.get(vote.outfitId) || { total: 0, count: 0 };
+      entry.total += vote.rating;
+      entry.count += 1;
+      scoreMap.set(vote.outfitId, entry);
+    }
 
-  // Build ranked results
-  const results = gameOutfits.map(outfit => {
-    const player = players.get(outfit.playerId);
-    const { total = 0, count = 0 } = scoreMap.get(outfit.outfitId) || {};
-    const score = count > 0 ? total / count : 0;
-    return {
-      outfitId: outfit.outfitId,
-      playerId: outfit.playerId,
-      username: player?.username || 'Unknown',
-      score: parseFloat(score.toFixed(1)),
-      totalVotes: count,
-      products: outfit.products,
-      totalPrice: outfit.totalPrice,
-      tryOnImage: outfit.tryOnImage || null,
-    };
-  });
+    // Build a player lookup map from the already-fetched players
+    const playerMap = new Map(gamePlayers.map(p => [p.playerId, p]));
 
-  // Single-player: generate a synthetic style score
-  if (game.singlePlayer) {
-    results.forEach(r => {
-      const itemCount = r.products.length;
-      const budgetEfficiency = Math.min(r.totalPrice / game.budget, 1);
-      const categorySet = new Set(r.products.map(p => p.category));
-      const variety = categorySet.size;
-      // Score: reward variety (up to 5 categories) and budget usage
-      r.score = parseFloat(Math.min((variety * 0.7 + budgetEfficiency * 1.5 + itemCount * 0.2), 5).toFixed(1));
-      r.totalVotes = 1;
+    // Build ranked results
+    const results = gameOutfits.map(outfit => {
+      const player = playerMap.get(outfit.playerId);
+      const { total = 0, count = 0 } = scoreMap.get(outfit.outfitId) || {};
+      const score = count > 0 ? total / count : 0;
+      return {
+        outfitId: outfit.outfitId,
+        playerId: outfit.playerId,
+        username: player?.username || 'Unknown',
+        score: parseFloat(score.toFixed(1)),
+        totalVotes: count,
+        products: outfit.products,
+        totalPrice: outfit.totalPrice,
+        tryOnImage: outfit.tryOnImage || null,
+      };
     });
+
+    // Single-player: generate a synthetic style score
+    if (game.singlePlayer) {
+      results.forEach(r => {
+        const itemCount = r.products.length;
+        const budgetEfficiency = Math.min(r.totalPrice / game.budget, 1);
+        const categorySet = new Set(r.products.map(p => p.category));
+        const variety = categorySet.size;
+        // Score: reward variety (up to 5 categories) and budget usage
+        r.score = parseFloat(Math.min((variety * 0.7 + budgetEfficiency * 1.5 + itemCount * 0.2), 5).toFixed(1));
+        r.totalVotes = 1;
+      });
+    }
+
+    results.sort((a, b) => b.score - a.score || b.totalVotes - a.totalVotes);
+    results.forEach((r, i) => { r.rank = i + 1; });
+
+    res.json({
+      results,
+      gameStats: {
+        totalPlayers: gamePlayers.length,
+        totalVotes: gameVotes.length,
+        avgBudgetUsed: results.length > 0
+          ? Math.round(results.reduce((s, r) => s + r.totalPrice, 0) / results.length)
+          : 0,
+      },
+    });
+  } catch (err) {
+    console.error('Get results error:', err.message);
+    res.status(500).json({ error: 'Failed to get results' });
   }
-
-  results.sort((a, b) => b.score - a.score || b.totalVotes - a.totalVotes);
-  results.forEach((r, i) => { r.rank = i + 1; });
-
-  const gamePlayers = game.playerIds.map(id => players.get(id)).filter(Boolean);
-  const gameVotes = [...votes.values()].filter(v => v.gameId === req.params.gameId);
-
-  res.json({
-    results,
-    gameStats: {
-      totalPlayers: gamePlayers.length,
-      totalVotes: gameVotes.length,
-      avgBudgetUsed: results.length > 0
-        ? Math.round(results.reduce((s, r) => s + r.totalPrice, 0) / results.length)
-        : 0,
-    },
-  });
 });
 
 // ============================================================
@@ -1076,7 +1150,29 @@ app.post('/api/avatar/generate', async (req, res) => {
 // START SERVER
 // ============================================================
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] },
+});
+
+io.on('connection', (socket) => {
+  console.log(`Socket connected: ${socket.id}`);
+
+  socket.on('join-room', ({ gameId, playerId }) => {
+    if (gameId) {
+      socket.join(gameId);
+      socket.data.gameId = gameId;
+      socket.data.playerId = playerId;
+      console.log(`Socket ${socket.id} joined room ${gameId}`);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`Socket disconnected: ${socket.id}`);
+  });
+});
+
+server.listen(PORT, () => {
   console.log(`Backend server running on http://localhost:${PORT}`);
   if (!GEMINI_API_KEY) console.warn('WARNING: GEMINI_API_KEY not set');
   if (!process.env.SHOPBOP_API_KEY) console.warn('WARNING: SHOPBOP_API_KEY not set — using client-id only');
