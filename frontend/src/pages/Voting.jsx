@@ -61,6 +61,16 @@ function Voting() {
   const [revealing, setRevealing] = useState(true); // outfit reveal animation
   const [voteStatus, setVoteStatus] = useState({ voted: 0, total: 0, players: [] });
 
+  // Recover game data in store on reload
+  useEffect(() => {
+    if (!useGameStore.getState().game) {
+      gameApi.getGame(gameId).then(res => {
+        const g = res.data.game || res.data;
+        if (g) useGameStore.getState().setGame(g);
+      }).catch(() => {});
+    }
+  }, [gameId]);
+
   useEffect(() => {
     fetchOutfits();
     // Fetch game info and start a live countdown
@@ -68,7 +78,7 @@ function Voting() {
     (async () => {
       try {
         const response = await gameApi.getGame(gameId);
-        const game = response.data;
+        const game = response.data.game || response.data;
         if (game.startedAt && game.timeLimit) {
           const startMs = new Date(game.startedAt).getTime();
           const endMs = startMs + game.timeLimit * 1000;

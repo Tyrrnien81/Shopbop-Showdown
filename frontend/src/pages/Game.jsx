@@ -91,7 +91,6 @@ function Game() {
 
   // Waiting room state
   const [hasSubmitted, setHasSubmitted] = useState(false);
-  const [submissionStatus, setSubmissionStatus] = useState({ submitted: 0, total: 0 });
 
   // Chat assistant state
   const [chatOpen, setChatOpen] = useState(false);
@@ -106,6 +105,33 @@ function Game() {
   // Live player submission tracker (multiplayer only)
   const [submissionStatus, setSubmissionStatus] = useState({ submitted: 0, total: 0, players: [] });
 
+  const [gameLoaded, setGameLoaded] = useState(!!game);
+
+  // Recover game & player data on reload / tab switch
+  useEffect(() => {
+    const recover = async () => {
+      try {
+        const res = await gameApi.getGame(gameId);
+        const g = res.data.game || res.data;
+        if (g) {
+          useGameStore.getState().setGame(g);
+          if (g.status === 'VOTING') { navigate(`/voting/${gameId}`); return; }
+          if (g.status === 'COMPLETED') { navigate(`/results/${gameId}`); return; }
+        }
+      } catch { /* ignore */ }
+      setGameLoaded(true);
+    };
+    recover();
+  }, [gameId, navigate]);
+
+  // Sync selectedProducts set with persisted outfit on mount
+  useEffect(() => {
+    const persisted = currentOutfit.products.map(p => p.productSin);
+    if (persisted.length > 0) {
+      setSelectedProducts(new Set(persisted));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const budget = game?.budget || 5000;
   const theme = game?.theme || 'Runway Ready';
 
@@ -118,7 +144,7 @@ function Game() {
 
     const onOutfitSubmitted = ({ gameStatus, submittedCount, totalPlayers }) => {
       if (submittedCount != null && totalPlayers != null) {
-        setSubmissionStatus({ submitted: submittedCount, total: totalPlayers });
+        setSubmissionStatus(prev => ({ ...prev, submitted: submittedCount, total: totalPlayers }));
       }
       if (gameStatus === 'VOTING') {
         navigate(`/voting/${gameId}`);
@@ -442,6 +468,11 @@ function Game() {
       }
     } catch {
       setPopupMessage('Failed to submit outfit');
+      // In solo mode, navigate to results even on error so user isn't stuck
+      const { isSinglePlayer: solo } = useGameStore.getState();
+      if (solo) {
+        setTimeout(() => navigate(`/results/${gameId}`), 1500);
+      }
     } finally {
       setLoading(false);
     }
@@ -525,20 +556,97 @@ function Game() {
   const budgetPercentage = (currentOutfit.totalPrice / budget) * 100;
   const isOutfitComplete = validationErrors.length === 0 && currentOutfit.products.length > 0;
 
+  // Poll game status to detect phase changes (fallback if socket misses it)
+  useEffect(() => {
+    if (!hasSubmitted || isSinglePlayer) return;
+    const pollGameStatus = async () => {
+      try {
+        const response = await gameApi.getGame(gameId);
+        const g = response.data.game || response.data;
+        const status = g?.status;
+        if (status === 'VOTING') navigate(`/voting/${gameId}`);
+        else if (status === 'COMPLETED') navigate(`/results/${gameId}`);
+      } catch { /* ignore */ }
+    };
+    pollGameStatus();
+    const poll = setInterval(pollGameStatus, 2000);
+    return () => clearInterval(poll);
+  }, [hasSubmitted, isSinglePlayer, gameId, navigate]);
+
+  // Loading state while game data is being fetched
+  if (!gameLoaded && !game) {
+    return (
+      <div className="waiting-room">
+        <div className="waiting-room-card">
+          <div className="waiting-room-brand">
+            <img src="/shopbop-favicon.svg" alt="Shopbop" style={{ width: 32, height: 32 }} />
+            <span>Style Showdown</span>
+          </div>
+          <div className="waiting-room-status">
+            <h2>Loading Game...</h2>
+            <p>Fetching game data, hang tight!</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Waiting room: show after multiplayer submission while waiting for others
   if (hasSubmitted && !isSinglePlayer) {
+    const pct = submissionStatus.total > 0 ? (submissionStatus.submitted / submissionStatus.total) * 100 : 0;
     return (
-      <div className="game-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <div style={{ textAlign: 'center', padding: '2rem' }}>
-          <div className="spinner" style={{ width: 48, height: 48, border: '4px solid #e0e0e0', borderTop: '4px solid #000', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 1.5rem' }} />
-          <h2 style={{ marginBottom: '0.5rem' }}>Waiting for other players to finish shopping...</h2>
-          {submissionStatus.total > 0 && (
-            <p style={{ color: '#666', fontSize: '1.1rem' }}>
-              {submissionStatus.submitted} of {submissionStatus.total} players submitted
-            </p>
+      <div className="waiting-room">
+        <div className="waiting-room-card">
+          {/* Brand header */}
+          <div className="waiting-room-brand">
+            <img src="/shopbop-favicon.svg" alt="Shopbop" style={{ width: 32, height: 32 }} />
+            <span>Style Showdown</span>
+          </div>
+
+          {/* Timer */}
+          {timeRemaining > 0 && (
+            <div className={`waiting-room-timer${timeRemaining <= 30 ? ' urgent' : ''}`}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              <span>{formatTime(timeRemaining)}</span>
+            </div>
           )}
+
+          {/* Status message */}
+          <div className="waiting-room-status">
+            <h2>Outfit Submitted!</h2>
+            <p>Waiting for other players to finish shopping...</p>
+          </div>
+
+          {/* Progress section */}
+          {submissionStatus.total > 0 && (
+            <div className="waiting-room-progress">
+              <div className="waiting-room-progress-header">
+                <span className="waiting-room-progress-label">Players Ready</span>
+                <span className="waiting-room-progress-count">{submissionStatus.submitted}/{submissionStatus.total}</span>
+              </div>
+              <div className="waiting-room-progress-bar">
+                <div className="waiting-room-progress-fill" style={{ width: `${pct}%` }} />
+              </div>
+              {/* Player dots */}
+              <div className="waiting-room-players">
+                {submissionStatus.players?.map((p, i) => (
+                  <div key={i} className={`waiting-room-player${p.submitted ? ' done' : ''}`}>
+                    <div className="waiting-room-player-dot" />
+                    <span>{p.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Action button */}
+          <button className="btn btn-outline" onClick={() => setHasSubmitted(false)}>
+            Edit My Outfit
+          </button>
         </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
@@ -613,7 +721,7 @@ function Game() {
               />
             </div>
             <div className="submission-chip-dots">
-              {submissionStatus.players.map((p, i) => (
+              {(submissionStatus.players || []).map((p, i) => (
                 <span
                   key={i}
                   className={`submission-chip-dot ${p.submitted ? 'done' : ''}`}

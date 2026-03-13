@@ -26,6 +26,9 @@ const SHOPBOP_CLIENT_ID = process.env.SHOPBOP_CLIENT_ID || 'Shopbop-UW-Team1-202
 
 let io;
 
+// In-memory cache for tryOnImages (too large for DynamoDB's 400KB item limit)
+const tryOnImageCache = new Map();
+
 // ============================================================
 // UTILITY FUNCTIONS
 // ============================================================
@@ -530,9 +533,10 @@ app.post('/api/outfits', async (req, res) => {
       await db.updateOutfit(player.outfitId, {
         products: outfitProducts || [],
         totalPrice: totalPrice || 0,
-        tryOnImage: tryOnImage || null,
         submittedAt,
       });
+      // Cache tryOnImage in memory (too large for DynamoDB)
+      if (tryOnImage) tryOnImageCache.set(player.outfitId, tryOnImage);
       console.log(`Outfit ${player.outfitId} re-submitted by player ${playerId}`);
       return res.status(200).json({ outfitId: player.outfitId, submittedAt });
     }
@@ -544,33 +548,44 @@ app.post('/api/outfits', async (req, res) => {
       playerId,
       products: outfitProducts || [],
       totalPrice: totalPrice || 0,
-      tryOnImage: tryOnImage || null,
       submittedAt: new Date().toISOString(),
     };
+
+    // Cache tryOnImage in memory (too large for DynamoDB)
+    if (tryOnImage) tryOnImageCache.set(outfitId, tryOnImage);
 
     await Promise.all([
       db.createOutfit(outfit),
       db.updatePlayer(playerId, { hasSubmitted: true, outfitId }),
     ]);
 
-    // Auto-advance when all players have submitted
+    console.log(`Outfit ${outfitId} submitted by player ${playerId}`);
+
+    // Count submissions reliably: re-fetch all players with a small delay
+    // to handle DynamoDB GSI eventual consistency
+    await new Promise(r => setTimeout(r, 500));
     const gamePlayers = await db.getPlayersByGameId(gameId);
-    if (gamePlayers.every(p => p.hasSubmitted)) {
+    const submittedCount = gamePlayers.filter(p => p.hasSubmitted).length;
+    const totalPlayers = gamePlayers.length;
+
+    console.log(`Submissions: ${submittedCount}/${totalPlayers}`);
+
+    // Auto-advance when all players have submitted
+    let newStatus = game.status;
+    if (submittedCount >= totalPlayers) {
       if (game.singlePlayer) {
         await db.updateGameStatus(gameId, 'COMPLETED', { endedAt: new Date().toISOString() });
+        newStatus = 'COMPLETED';
         console.log(`Solo game ${gameId} completed (skipping voting)`);
       } else {
         await db.updateGameStatus(gameId, 'VOTING');
+        newStatus = 'VOTING';
         console.log(`Game ${gameId} moved to VOTING phase`);
       }
     }
 
-    console.log(`Outfit ${outfitId} submitted by player ${playerId}`);
-
     // Notify all clients in the room
-    const updatedGame = await db.getGame(gameId);
-    const submittedCount = gamePlayers.filter(p => p.hasSubmitted).length;
-    if (io) io.to(gameId).emit('outfit-submitted', { submittedCount, totalPlayers: gamePlayers.length, gameStatus: updatedGame.status });
+    if (io) io.to(gameId).emit('outfit-submitted', { submittedCount, totalPlayers, gameStatus: newStatus });
 
     res.status(201).json({ outfitId, submittedAt: outfit.submittedAt });
   } catch (err) {
@@ -595,7 +610,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           outfitId: outfit.outfitId,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
-          tryOnImage: outfit.tryOnImage || null,
+          tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
         });
       } else {
         // Include player info for completed games
@@ -606,7 +621,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           playerName: player?.username,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
-          tryOnImage: outfit.tryOnImage || null,
+          tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
         });
       }
     }
@@ -702,7 +717,7 @@ app.get('/api/games/:gameId/results', async (req, res) => {
         totalVotes: count,
         products: outfit.products,
         totalPrice: outfit.totalPrice,
-        tryOnImage: outfit.tryOnImage || null,
+        tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
       };
     });
 
