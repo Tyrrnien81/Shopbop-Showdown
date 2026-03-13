@@ -1,4 +1,4 @@
-const { GetCommand, PutCommand, UpdateCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { GetCommand, PutCommand, UpdateCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('./dynamoClient');
 
 const TABLE = 'Outfits';
@@ -48,4 +48,17 @@ async function getOutfitsByGameId(gameId) {
   return Items || [];
 }
 
-module.exports = { getOutfit, createOutfit, updateOutfit, getOutfitsByGameId };
+async function scanAllOutfits() {
+  const items = [];
+  let lastKey;
+  do {
+    const params = { TableName: TABLE };
+    if (lastKey) params.ExclusiveStartKey = lastKey;
+    const { Items, LastEvaluatedKey } = await docClient.send(new ScanCommand(params));
+    items.push(...(Items || []));
+    lastKey = LastEvaluatedKey;
+  } while (lastKey);
+  return items;
+}
+
+module.exports = { getOutfit, createOutfit, updateOutfit, getOutfitsByGameId, scanAllOutfits };
