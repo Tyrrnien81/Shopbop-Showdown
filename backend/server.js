@@ -1174,9 +1174,13 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Backend server running on http://localhost:${PORT}`);
-  if (!GEMINI_API_KEY) console.warn('WARNING: GEMINI_API_KEY not set');
-  if (!process.env.SHOPBOP_API_KEY) console.warn('WARNING: SHOPBOP_API_KEY not set — using client-id only');
-  console.log(`ShopBop client-id: ${SHOPBOP_CLIENT_ID}`);
-});
+if (require.main === module) {
+  server.listen(PORT, () => {
+    console.log(`Backend server running on http://localhost:${PORT}`);
+    if (!GEMINI_API_KEY) console.warn('WARNING: GEMINI_API_KEY not set');
+    if (!process.env.SHOPBOP_API_KEY) console.warn('WARNING: SHOPBOP_API_KEY not set — using client-id only');
+    console.log(`ShopBop client-id: ${SHOPBOP_CLIENT_ID}`);
+  });
+}
+
+module.exports = { app, server };
