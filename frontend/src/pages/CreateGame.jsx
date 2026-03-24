@@ -23,6 +23,7 @@ function CreateGame() {
     maxPlayers: 4,
     timeLimit: 300,
     singlePlayer: false,
+    themeMode: 'vote', // 'vote' | 'pick'
   });
 
   const handleThemeSelect = (themeId) => {
@@ -48,7 +49,10 @@ function CreateGame() {
     setLoading(true);
 
     try {
-      const response = await gameApi.createGame(formData);
+      const payload = { ...formData };
+      // In solo mode, always use host-pick; themeMode only matters for multiplayer
+      if (payload.singlePlayer) payload.themeMode = 'pick';
+      const response = await gameApi.createGame(payload);
       const { game, player } = response.data;
       setGame(game);
       setCurrentPlayer(player);
@@ -87,24 +91,61 @@ function CreateGame() {
         </div>
 
         <form onSubmit={handleSubmit}>
-          {/* Theme Selection */}
-          <div className="theme-section">
-            <div className="theme-grid">
-              {themes.map((theme) => (
-                <div
-                  key={theme.id}
-                  className={`theme-card ${formData.theme === theme.id ? 'selected' : ''}`}
-                  onClick={() => handleThemeSelect(theme.id)}
+          {/* Theme Mode Toggle (multiplayer only) */}
+          {!formData.singlePlayer && (
+            <div className="theme-mode-toggle">
+              <span className="theme-mode-label">Theme Selection</span>
+              <div className="theme-mode-options">
+                <button
+                  type="button"
+                  className={`theme-mode-btn ${formData.themeMode === 'vote' ? 'active' : ''}`}
+                  onClick={() => setFormData(prev => ({ ...prev, themeMode: 'vote' }))}
                 >
-                  <div className="theme-icon">{theme.icon}</div>
-                  <div className="theme-info">
-                    <h4>{theme.name}</h4>
-                    <p>{theme.description}</p>
-                  </div>
-                </div>
-              ))}
+                  <span className="theme-mode-btn-icon">🗳️</span>
+                  <span>Players Vote</span>
+                </button>
+                <button
+                  type="button"
+                  className={`theme-mode-btn ${formData.themeMode === 'pick' ? 'active' : ''}`}
+                  onClick={() => setFormData(prev => ({ ...prev, themeMode: 'pick' }))}
+                >
+                  <span className="theme-mode-btn-icon">👑</span>
+                  <span>Host Picks</span>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Theme grid — shown in solo mode OR when host picks */}
+          {(formData.singlePlayer || formData.themeMode === 'pick') ? (
+            <div className="theme-section">
+              <div className="theme-grid">
+                {themes.map((theme) => (
+                  <div
+                    key={theme.id}
+                    className={`theme-card ${formData.theme === theme.id ? 'selected' : ''}`}
+                    onClick={() => handleThemeSelect(theme.id)}
+                  >
+                    <div className="theme-icon">{theme.icon}</div>
+                    <div className="theme-info">
+                      <h4>{theme.name}</h4>
+                      <p>{theme.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="theme-section theme-vote-preview">
+              <div className="theme-vote-preview-icons">
+                {['✨', '⚡', '❄️', '🏙️', '💎', '🏖️'].map((icon, i) => (
+                  <span key={i} className="theme-vote-preview-icon" style={{ animationDelay: `${i * 0.1}s` }}>{icon}</span>
+                ))}
+              </div>
+              <h3>Players Vote on the Theme</h3>
+              <p>3 random themes will appear after launch — everyone votes, majority wins!</p>
+            </div>
+          )}
 
           {/* Budget Slider */}
           <div className="budget-section">
@@ -126,6 +167,29 @@ function CreateGame() {
             <div className="budget-labels">
               <span>Street ($500)</span>
               <span>Couture ($10,000)</span>
+            </div>
+          </div>
+
+          {/* Time Limit Selector */}
+          <div className="time-limit-section">
+            <span className="time-limit-label">Time Limit</span>
+            <div className="time-limit-options">
+              {[
+                { value: 120, label: '2 min', desc: 'Speed Round' },
+                { value: 300, label: '5 min', desc: 'Standard' },
+                { value: 600, label: '10 min', desc: 'Relaxed' },
+                { value: 900, label: '15 min', desc: 'Curate' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  className={`time-limit-btn ${formData.timeLimit === opt.value ? 'selected' : ''}`}
+                  onClick={() => setFormData(prev => ({ ...prev, timeLimit: opt.value }))}
+                >
+                  <span className="time-limit-btn-value">{opt.label}</span>
+                  <span className="time-limit-btn-desc">{opt.desc}</span>
+                </button>
+              ))}
             </div>
           </div>
 

@@ -1,15 +1,23 @@
 import { create } from 'zustand';
 
+// Helpers to persist player & outfit per tab using sessionStorage
+const loadSession = (key) => {
+  try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; }
+};
+const saveSession = (key, val) => {
+  try { sessionStorage.setItem(key, JSON.stringify(val)); } catch { /* ignore */ }
+};
+
 const useGameStore = create((set, get) => ({
   // Game State
   game: null,
   players: [],
-  currentPlayer: null,
-  gameStatus: null, // LOBBY | IN_PROGRESS | VOTING | COMPLETED
+  currentPlayer: loadSession('ss_currentPlayer') || null,
+  gameStatus: null, // LOBBY | THEME_VOTING | IN_PROGRESS | VOTING | COMPLETED
   isSinglePlayer: false,
 
   // Outfit State
-  currentOutfit: {
+  currentOutfit: loadSession('ss_currentOutfit') || {
     products: [],
     totalPrice: 0,
   },
@@ -34,7 +42,10 @@ const useGameStore = create((set, get) => ({
 
   setPlayers: (players) => set({ players }),
 
-  setCurrentPlayer: (player) => set({ currentPlayer: player }),
+  setCurrentPlayer: (player) => {
+    saveSession('ss_currentPlayer', player);
+    set({ currentPlayer: player });
+  },
 
   updateGameStatus: (status) => set({ gameStatus: status }),
 
@@ -56,13 +67,12 @@ const useGameStore = create((set, get) => ({
       return false;
     }
 
-    set({
-      currentOutfit: {
-        products: [...currentOutfit.products, product],
-        totalPrice: newTotal,
-      },
-      error: null,
-    });
+    const newOutfit = {
+      products: [...currentOutfit.products, product],
+      totalPrice: newTotal,
+    };
+    saveSession('ss_currentOutfit', newOutfit);
+    set({ currentOutfit: newOutfit, error: null });
     return true;
   },
 
@@ -71,18 +81,19 @@ const useGameStore = create((set, get) => ({
     const product = currentOutfit.products.find((p) => p.productSin === productId);
 
     if (product) {
-      set({
-        currentOutfit: {
-          products: currentOutfit.products.filter((p) => p.productSin !== productId),
-          totalPrice: currentOutfit.totalPrice - product.price,
-        },
-      });
+      const newOutfit = {
+        products: currentOutfit.products.filter((p) => p.productSin !== productId),
+        totalPrice: currentOutfit.totalPrice - product.price,
+      };
+      saveSession('ss_currentOutfit', newOutfit);
+      set({ currentOutfit: newOutfit });
     }
   },
 
-  clearOutfit: () => set({
-    currentOutfit: { products: [], totalPrice: 0 },
-  }),
+  clearOutfit: () => {
+    saveSession('ss_currentOutfit', { products: [], totalPrice: 0 });
+    set({ currentOutfit: { products: [], totalPrice: 0 } });
+  },
 
   // Voting Actions
   setOutfits: (outfits) => set({ outfits }),
@@ -106,7 +117,9 @@ const useGameStore = create((set, get) => ({
   setUserPhoto: (userPhoto) => set({ userPhoto }),
 
   // Reset store
-  resetGame: () => set({
+  resetGame: () => {
+    try { sessionStorage.removeItem('ss_currentPlayer'); sessionStorage.removeItem('ss_currentOutfit'); } catch {}
+    return set({
     game: null,
     players: [],
     currentPlayer: null,
@@ -119,7 +132,8 @@ const useGameStore = create((set, get) => ({
     hasVoted: false,
     isLoading: false,
     error: null,
-  }),
+  });
+  },
 }));
 
 export default useGameStore;

@@ -44,14 +44,18 @@ function Voting() {
   const { gameId } = useParams();
   const navigate = useNavigate();
   const {
-    outfits,
+    outfits: allOutfits,
     setOutfits,
     hasVoted,
     setHasVoted,
     setLoading,
     setError,
     error,
+    currentPlayer,
   } = useGameStore();
+
+  // Filter out the current player's own outfit so they can't vote on it
+  const outfits = allOutfits.filter(o => o.playerId !== currentPlayer?.playerId);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [ratings, setRatings] = useState({});
@@ -59,6 +63,17 @@ function Voting() {
   const [hoveredStar, setHoveredStar] = useState(null);
   const [timeLeft, setTimeLeft] = useState(null); // seconds remaining in game
   const [revealing, setRevealing] = useState(true); // outfit reveal animation
+  const [voteStatus, setVoteStatus] = useState({ voted: 0, total: 0, players: [] });
+
+  // Recover game data in store on reload
+  useEffect(() => {
+    if (!useGameStore.getState().game) {
+      gameApi.getGame(gameId).then(res => {
+        const g = res.data.game || res.data;
+        if (g) useGameStore.getState().setGame(g);
+      }).catch(() => {});
+    }
+  }, [gameId]);
 
   useEffect(() => {
     fetchOutfits();
@@ -67,7 +82,7 @@ function Voting() {
     (async () => {
       try {
         const response = await gameApi.getGame(gameId);
-        const game = response.data;
+        const game = response.data.game || response.data;
         if (game.startedAt && game.timeLimit) {
           const startMs = new Date(game.startedAt).getTime();
           const endMs = startMs + game.timeLimit * 1000;
@@ -85,6 +100,26 @@ function Voting() {
     })();
 
     return () => { if (interval) clearInterval(interval); };
+  }, [gameId]);
+
+  // Poll vote status from players endpoint
+  useEffect(() => {
+    const fetchVoteStatus = async () => {
+      try {
+        const response = await gameApi.getPlayers(gameId);
+        const playerList = response.data.players || [];
+        const voted = playerList.filter(p => p.hasVoted).length;
+        setVoteStatus({
+          voted,
+          total: playerList.length,
+          players: playerList.map(p => ({ name: p.username, voted: p.hasVoted })),
+        });
+      } catch { /* ignore */ }
+    };
+
+    fetchVoteStatus();
+    const poll = setInterval(fetchVoteStatus, 3000);
+    return () => clearInterval(poll);
   }, [gameId]);
 
   // Ensure socket is connected and listen for vote completion
@@ -198,6 +233,32 @@ function Voting() {
           <div className="spinner" style={{ borderColor: 'rgba(255,255,255,0.2)', borderTopColor: 'var(--primary-orange)' }}></div>
           <h2>Vote Submitted!</h2>
           <p style={{ color: 'rgba(255,255,255,0.6)' }}>Waiting for other players to vote...</p>
+          {voteStatus.total > 0 && (
+            <div className="vote-tracker" style={{ marginTop: '24px' }}>
+              <div className="vote-tracker-header">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+                <span>{voteStatus.voted}/{voteStatus.total} Players Voted</span>
+              </div>
+              <div className="vote-tracker-players">
+                {voteStatus.players.map((p, i) => (
+                  <div key={i} className={`vote-tracker-player ${p.voted ? 'done' : ''}`}>
+                    <span className="vote-tracker-dot" />
+                    <span className="vote-tracker-name">{p.name}</span>
+                    {p.voted ? (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : (
+                      <span className="vote-tracker-pending">voting...</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -256,6 +317,34 @@ function Voting() {
         )}
       </header>
 
+      {/* Live Voting Tracker */}
+      {voteStatus.total > 0 && (
+        <div className="vote-tracker">
+          <div className="vote-tracker-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+            <span>{voteStatus.voted}/{voteStatus.total} Votes In</span>
+          </div>
+          <div className="vote-tracker-players">
+            {voteStatus.players.map((p, i) => (
+              <div key={i} className={`vote-tracker-player ${p.voted ? 'done' : ''}`}>
+                <span className="vote-tracker-dot" />
+                <span className="vote-tracker-name">{p.name}</span>
+                {p.voted ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <span className="vote-tracker-pending">voting...</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="error-message" style={{ maxWidth: '600px', margin: '0 auto 24px' }}>
           {error}
@@ -310,6 +399,13 @@ function Voting() {
                       <span className="voting-side-item-cat">{product.category}</span>
                       <span className="voting-side-item-price">${product.price.toLocaleString()}</span>
                     </div>
+                    {product.productUrl && (
+                      <a href={product.productUrl} target="_blank" rel="noopener noreferrer" className="items-shop-link" title="Shop on Shopbop">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
+                        </svg>
+                      </a>
+                    )}
                   </div>
                 ))}
               </div>

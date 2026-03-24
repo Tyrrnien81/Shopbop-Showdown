@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { generateTryOnImage, generateSingleTryOnImage } from '../services/geminiApi';
-import { productApi, outfitApi, chatApi, avatarApi } from '../services/api';
+import { productApi, outfitApi, chatApi, avatarApi, gameApi } from '../services/api';
 import useGameStore from '../store/gameStore';
 import socketService from '../services/socket';
 
@@ -38,6 +38,7 @@ function Game() {
   const navigate = useNavigate();
   const {
     game,
+    currentPlayer,
     currentOutfit,
     userPhoto,
     setUserPhoto,
@@ -91,7 +92,6 @@ function Game() {
 
   // Waiting room state
   const [hasSubmitted, setHasSubmitted] = useState(false);
-  const [submissionStatus, setSubmissionStatus] = useState({ submitted: 0, total: 0 });
 
   // Chat assistant state
   const [chatOpen, setChatOpen] = useState(false);
@@ -102,6 +102,36 @@ function Game() {
   const [chatLoading, setChatLoading] = useState(false);
   const chatMessagesRef = useRef(null);
   const photoInputRef = useRef(null);
+
+  // Live player submission tracker (multiplayer only)
+  const [submissionStatus, setSubmissionStatus] = useState({ submitted: 0, total: 0, players: [] });
+
+  const [gameLoaded, setGameLoaded] = useState(!!game);
+
+  // Recover game & player data on reload / tab switch
+  useEffect(() => {
+    const recover = async () => {
+      try {
+        const res = await gameApi.getGame(gameId);
+        const g = res.data.game || res.data;
+        if (g) {
+          useGameStore.getState().setGame(g);
+          if (g.status === 'VOTING') { navigate(`/voting/${gameId}`); return; }
+          if (g.status === 'COMPLETED') { navigate(`/results/${gameId}`); return; }
+        }
+      } catch { /* ignore */ }
+      setGameLoaded(true);
+    };
+    recover();
+  }, [gameId, navigate]);
+
+  // Sync selectedProducts set with persisted outfit on mount
+  useEffect(() => {
+    const persisted = currentOutfit.products.map(p => p.productSin);
+    if (persisted.length > 0) {
+      setSelectedProducts(new Set(persisted));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const budget = game?.budget || 5000;
   const theme = game?.theme || 'Runway Ready';
@@ -115,7 +145,7 @@ function Game() {
 
     const onOutfitSubmitted = ({ gameStatus, submittedCount, totalPlayers }) => {
       if (submittedCount != null && totalPlayers != null) {
-        setSubmissionStatus({ submitted: submittedCount, total: totalPlayers });
+        setSubmissionStatus(prev => ({ ...prev, submitted: submittedCount, total: totalPlayers }));
       }
       if (gameStatus === 'VOTING') {
         navigate(`/voting/${gameId}`);
@@ -439,6 +469,11 @@ function Game() {
       }
     } catch {
       setPopupMessage('Failed to submit outfit');
+      // In solo mode, navigate to results even on error so user isn't stuck
+      const { isSinglePlayer: solo } = useGameStore.getState();
+      if (solo) {
+        setTimeout(() => navigate(`/results/${gameId}`), 1500);
+      }
     } finally {
       setLoading(false);
     }
@@ -459,6 +494,26 @@ function Game() {
 
     return () => clearInterval(timer);
   }, [handleSubmitOutfit]);
+
+  // Poll player submission status
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const response = await gameApi.getPlayers(gameId);
+        const playerList = response.data.players || [];
+        const submitted = playerList.filter(p => p.hasSubmitted).length;
+        setSubmissionStatus({
+          submitted,
+          total: playerList.length,
+          players: playerList.map(p => ({ name: p.username, submitted: p.hasSubmitted })),
+        });
+      } catch { /* ignore */ }
+    };
+
+    fetchStatus();
+    const poll = setInterval(fetchStatus, 3000);
+    return () => clearInterval(poll);
+  }, [gameId, isSinglePlayer]);
 
   const handleProductClick = (product) => {
     if (selectedProducts.has(product.productSin)) {
@@ -502,20 +557,143 @@ function Game() {
   const budgetPercentage = (currentOutfit.totalPrice / budget) * 100;
   const isOutfitComplete = validationErrors.length === 0 && currentOutfit.products.length > 0;
 
-  // Waiting room: show after multiplayer submission while waiting for others
-  if (hasSubmitted && !isSinglePlayer) {
+  // Poll game status to detect phase changes (fallback if socket misses it)
+  useEffect(() => {
+    if (!hasSubmitted || isSinglePlayer) return;
+    const pollGameStatus = async () => {
+      try {
+        const response = await gameApi.getGame(gameId);
+        const g = response.data.game || response.data;
+        const status = g?.status;
+        if (status === 'VOTING') navigate(`/voting/${gameId}`);
+        else if (status === 'COMPLETED') navigate(`/results/${gameId}`);
+      } catch { /* ignore */ }
+    };
+    pollGameStatus();
+    const poll = setInterval(pollGameStatus, 2000);
+    return () => clearInterval(poll);
+  }, [hasSubmitted, isSinglePlayer, gameId, navigate]);
+
+  // Loading state while game data is being fetched
+  if (!gameLoaded && !game) {
     return (
-      <div className="game-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <div style={{ textAlign: 'center', padding: '2rem' }}>
-          <div className="spinner" style={{ width: 48, height: 48, border: '4px solid #e0e0e0', borderTop: '4px solid #000', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 1.5rem' }} />
-          <h2 style={{ marginBottom: '0.5rem' }}>Waiting for other players to finish shopping...</h2>
+      <div className="waiting-room">
+        <div className="waiting-room-card">
+          <div className="waiting-room-brand">
+            <img src="/shopbop-favicon.svg" alt="Shopbop" style={{ width: 32, height: 32 }} />
+            <span>Style Showdown</span>
+          </div>
+          <div className="waiting-room-status">
+            <h2>Loading Game...</h2>
+            <p>Fetching game data, hang tight!</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Audience spectator screen — audience members wait here until voting
+  if (currentPlayer?.isAudience) {
+    const pct = submissionStatus.total > 0 ? (submissionStatus.submitted / submissionStatus.total) * 100 : 0;
+    return (
+      <div className="waiting-room">
+        <div className="waiting-room-card">
+          <div className="waiting-room-brand">
+            <img src="/shopbop-favicon.svg" alt="Shopbop" style={{ width: 32, height: 32 }} />
+            <span>Style Showdown</span>
+          </div>
+          <div className="audience-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            Audience Mode
+          </div>
+          <div className="waiting-room-status">
+            <h2>Players are styling...</h2>
+            <p>Sit back and relax! You'll vote on the outfits once everyone submits.</p>
+          </div>
           {submissionStatus.total > 0 && (
-            <p style={{ color: '#666', fontSize: '1.1rem' }}>
-              {submissionStatus.submitted} of {submissionStatus.total} players submitted
-            </p>
+            <div className="waiting-room-progress">
+              <div className="waiting-room-progress-header">
+                <span>Outfits Submitted</span>
+                <span className="waiting-room-progress-count">{submissionStatus.submitted}/{submissionStatus.total}</span>
+              </div>
+              <div className="waiting-room-progress-bar">
+                <div className="waiting-room-progress-fill" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          )}
+          {timeRemaining > 0 && (
+            <div className="waiting-room-timer">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              {Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')} remaining
+            </div>
           )}
         </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  // Waiting room: show after multiplayer submission while waiting for others
+  if (hasSubmitted && !isSinglePlayer) {
+    const pct = submissionStatus.total > 0 ? (submissionStatus.submitted / submissionStatus.total) * 100 : 0;
+    return (
+      <div className="waiting-room">
+        <div className="waiting-room-card">
+          {/* Brand header */}
+          <div className="waiting-room-brand">
+            <img src="/shopbop-favicon.svg" alt="Shopbop" style={{ width: 32, height: 32 }} />
+            <span>Style Showdown</span>
+          </div>
+
+          {/* Timer */}
+          {timeRemaining > 0 && (
+            <div className={`waiting-room-timer${timeRemaining <= 30 ? ' urgent' : ''}`}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              <span>{formatTime(timeRemaining)}</span>
+            </div>
+          )}
+
+          {/* Status message */}
+          <div className="waiting-room-status">
+            <h2>Outfit Submitted!</h2>
+            <p>Waiting for other players to finish shopping...</p>
+          </div>
+
+          {/* Progress section */}
+          {submissionStatus.total > 0 && (
+            <div className="waiting-room-progress">
+              <div className="waiting-room-progress-header">
+                <span className="waiting-room-progress-label">Players Ready</span>
+                <span className="waiting-room-progress-count">{submissionStatus.submitted}/{submissionStatus.total}</span>
+              </div>
+              <div className="waiting-room-progress-bar">
+                <div className="waiting-room-progress-fill" style={{ width: `${pct}%` }} />
+              </div>
+              {/* Player dots */}
+              <div className="waiting-room-players">
+                {submissionStatus.players?.map((p, i) => (
+                  <div key={i} className={`waiting-room-player${p.submitted ? ' done' : ''}`}>
+                    <div className="waiting-room-player-dot" />
+                    <span>{p.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Action button */}
+          <button className="btn btn-outline" onClick={() => setHasSubmitted(false)}>
+            Edit My Outfit
+          </button>
+        </div>
       </div>
     );
   }
@@ -569,6 +747,37 @@ function Game() {
           </span>
           {walletSpend && <span className="wallet-spend-fly">-$</span>}
         </div>
+
+        {/* Live Submission Tracker */}
+        {submissionStatus.total > 0 && (
+          <div className="submission-chip">
+            <span className="submission-chip-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              Players
+            </span>
+            <span className="submission-chip-count">{submissionStatus.submitted}/{submissionStatus.total}</span>
+            <div className="submission-chip-bar">
+              <div
+                className="submission-chip-bar-fill"
+                style={{ width: `${(submissionStatus.submitted / submissionStatus.total) * 100}%` }}
+              />
+            </div>
+            <div className="submission-chip-dots">
+              {(submissionStatus.players || []).map((p, i) => (
+                <span
+                  key={i}
+                  className={`submission-chip-dot ${p.submitted ? 'done' : ''}`}
+                  title={`${p.name}${p.submitted ? ' - Submitted' : ' - Working...'}`}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </header>
 
       <div className="game-content">
@@ -754,7 +963,16 @@ function Game() {
                 <div className="product-info">
                   <span className="product-brand">{product.brand || product.category}</span>
                   <span className="product-name">{product.name}</span>
-                  <span className="product-price">${product.price.toFixed(2)}</span>
+                  <div className="product-price-row">
+                    <span className="product-price">${product.price.toFixed(2)}</span>
+                    {product.productUrl && (
+                      <a href={product.productUrl} target="_blank" rel="noopener noreferrer" className="product-shop-link" onClick={e => e.stopPropagation()} title="View on Shopbop">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
+                        </svg>
+                      </a>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
