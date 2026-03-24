@@ -425,7 +425,7 @@ app.get('/api/products/:productSin', async (req, res) => {
 // POST /api/games — create a new game
 app.post('/api/games', async (req, res) => {
   try {
-    const { hostUsername, theme, budget, maxPlayers, timeLimit, singlePlayer, themeMode } = req.body;
+    const { hostUsername, theme, budget, maxPlayers, timeLimit, singlePlayer, themeMode, votingMode } = req.body;
 
     if (!hostUsername) {
       return res.status(400).json({ error: 'hostUsername is required' });
@@ -462,6 +462,7 @@ app.post('/api/games', async (req, res) => {
       endedAt: null,
       singlePlayer: Boolean(singlePlayer),
       themeMode: themeMode || 'vote', // 'vote' or 'pick'
+      votingMode: votingMode || 'star', // 'star' or 'ranking'
     };
 
     await Promise.all([
@@ -813,7 +814,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
 // POST /api/votes — submit votes
 app.post('/api/votes', async (req, res) => {
   try {
-    const { gameId, playerId, ratings } = req.body;
+    const { gameId, playerId, ratings, rankings } = req.body;
 
     const game = await db.getGame(gameId);
     if (!game) return res.status(404).json({ error: 'Game not found' });
@@ -821,18 +822,38 @@ app.post('/api/votes', async (req, res) => {
     const player = await db.getPlayer(playerId);
     if (!player || player.gameId !== gameId) return res.status(404).json({ error: 'Player not found in this game' });
     if (player.hasVoted) return res.status(400).json({ error: 'Already voted' });
-    if (!Array.isArray(ratings) || ratings.length === 0) return res.status(400).json({ error: 'ratings array is required' });
 
     // Prevent voting on own outfit
     const playerOutfits = await db.getOutfitsByGameId(gameId);
     const ownOutfitIds = new Set(playerOutfits.filter(o => o.playerId === playerId).map(o => o.outfitId));
-    const selfVote = ratings.find(r => ownOutfitIds.has(r.outfitId));
-    if (selfVote) return res.status(400).json({ error: 'Cannot vote on your own outfit' });
 
-    // Write all votes and update player in parallel
-    const voteWrites = ratings.map(({ outfitId, rating }) =>
-      db.createVote({ voteId: generateId(), gameId, voterId: playerId, outfitId, rating: Number(rating) })
-    );
+    let voteWrites;
+
+    if (game.votingMode === 'ranking') {
+      // Ranking mode: rankings is an ordered array of outfitIds (best first)
+      if (!Array.isArray(rankings) || rankings.length === 0) {
+        return res.status(400).json({ error: 'rankings array is required for ranking mode' });
+      }
+      const selfVote = rankings.find(id => ownOutfitIds.has(id));
+      if (selfVote) return res.status(400).json({ error: 'Cannot include your own outfit in rankings' });
+
+      // Store each rank position: rank 1 = best, rank N = worst
+      voteWrites = rankings.map((outfitId, index) =>
+        db.createVote({ voteId: generateId(), gameId, voterId: playerId, outfitId, rating: index + 1 })
+      );
+    } else {
+      // Star mode: ratings is [{ outfitId, rating }]
+      if (!Array.isArray(ratings) || ratings.length === 0) {
+        return res.status(400).json({ error: 'ratings array is required' });
+      }
+      const selfVote = ratings.find(r => ownOutfitIds.has(r.outfitId));
+      if (selfVote) return res.status(400).json({ error: 'Cannot vote on your own outfit' });
+
+      voteWrites = ratings.map(({ outfitId, rating }) =>
+        db.createVote({ voteId: generateId(), gameId, voterId: playerId, outfitId, rating: Number(rating) })
+      );
+    }
+
     await Promise.all([
       ...voteWrites,
       db.updatePlayer(playerId, { hasVoted: true }),
@@ -871,28 +892,66 @@ app.get('/api/games/:gameId/results', async (req, res) => {
       db.getPlayersByGameId(req.params.gameId),
     ]);
 
-    // Aggregate vote scores per outfit
-    const scoreMap = new Map();
-    for (const vote of gameVotes) {
-      const entry = scoreMap.get(vote.outfitId) || { total: 0, count: 0 };
-      entry.total += vote.rating;
-      entry.count += 1;
-      scoreMap.set(vote.outfitId, entry);
-    }
-
     // Build a player lookup map from the already-fetched players
     const playerMap = new Map(gamePlayers.map(p => [p.playerId, p]));
+
+    // Aggregate vote scores per outfit
+    const scoreMap = new Map();
+
+    if (game.votingMode === 'ranking') {
+      // Ranking mode: use Borda count
+      // Each vote.rating is the rank position (1=best, N=worst)
+      // Borda points: N - rank + 1 (best gets N points, worst gets 1)
+      const totalOutfits = gameOutfits.filter(o => {
+        // Count outfits that were rankable (not the voter's own)
+        return true; // all outfits count for N
+      }).length;
+      // N = number of outfits being ranked per voter (total outfits minus voter's own)
+      // But since each voter ranks a different number, derive N from the vote itself
+      for (const vote of gameVotes) {
+        const entry = scoreMap.get(vote.outfitId) || { total: 0, count: 0 };
+        // Count how many outfits this voter ranked (to compute N per voter)
+        const voterVotes = gameVotes.filter(v => v.voterId === vote.voterId);
+        const n = voterVotes.length;
+        const bordaPoints = n - vote.rating + 1; // rank 1 → N points, rank N → 1 point
+        entry.total += bordaPoints;
+        entry.count += 1;
+        scoreMap.set(vote.outfitId, entry);
+      }
+    } else {
+      // Star mode: existing average rating logic
+      for (const vote of gameVotes) {
+        const entry = scoreMap.get(vote.outfitId) || { total: 0, count: 0 };
+        entry.total += vote.rating;
+        entry.count += 1;
+        scoreMap.set(vote.outfitId, entry);
+      }
+    }
 
     // Build ranked results
     const results = gameOutfits.map(outfit => {
       const player = playerMap.get(outfit.playerId);
       const { total = 0, count = 0 } = scoreMap.get(outfit.outfitId) || {};
-      const score = count > 0 ? total / count : 0;
+
+      let score;
+      if (game.votingMode === 'ranking') {
+        // Normalize Borda points to 0-5 scale
+        // Max possible Borda points per vote = N (number of ranked outfits per voter)
+        // Average Borda = total / count, then normalize: (avg / N) * 5
+        const avgBorda = count > 0 ? total / count : 0;
+        // Estimate N from the first voter's count
+        const sampleVoter = gameVotes.find(v => v.voterId);
+        const n = sampleVoter ? gameVotes.filter(v => v.voterId === sampleVoter.voterId).length : 1;
+        score = count > 0 ? parseFloat(((avgBorda / n) * 5).toFixed(1)) : 0;
+      } else {
+        score = count > 0 ? parseFloat((total / count).toFixed(1)) : 0;
+      }
+
       return {
         outfitId: outfit.outfitId,
         playerId: outfit.playerId,
         username: player?.username || 'Unknown',
-        score: parseFloat(score.toFixed(1)),
+        score,
         totalVotes: count,
         products: outfit.products,
         totalPrice: outfit.totalPrice,

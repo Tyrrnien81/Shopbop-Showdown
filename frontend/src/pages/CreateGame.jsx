@@ -24,6 +24,7 @@ function CreateGame() {
     timeLimit: 300,
     singlePlayer: false,
     themeMode: 'vote', // 'vote' | 'pick'
+    votingMode: 'star', // 'star' | 'ranking'
   });
 
   const handleThemeSelect = (themeId) => {
@@ -192,6 +193,31 @@ function CreateGame() {
               ))}
             </div>
           </div>
+
+          {/* Voting Mode Toggle (multiplayer only) */}
+          {!formData.singlePlayer && (
+            <div className="theme-mode-toggle">
+              <span className="theme-mode-label">Voting Style</span>
+              <div className="theme-mode-options">
+                <button
+                  type="button"
+                  className={`theme-mode-btn ${formData.votingMode === 'star' ? 'active' : ''}`}
+                  onClick={() => setFormData(prev => ({ ...prev, votingMode: 'star' }))}
+                >
+                  <span className="theme-mode-btn-icon">★</span>
+                  <span>Star Rating</span>
+                </button>
+                <button
+                  type="button"
+                  className={`theme-mode-btn ${formData.votingMode === 'ranking' ? 'active' : ''}`}
+                  onClick={() => setFormData(prev => ({ ...prev, votingMode: 'ranking' }))}
+                >
+                  <span className="theme-mode-btn-icon">#</span>
+                  <span>Rank Outfits</span>
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Solo Mode Toggle */}
           <div style={{

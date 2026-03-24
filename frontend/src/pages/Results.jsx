@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { voteApi } from '../services/api';
+import { voteApi, gameApi } from '../services/api';
 import useGameStore from '../store/gameStore';
 import socketService from '../services/socket';
 
@@ -56,7 +56,8 @@ const PHASE_FULL = 4;
 function Results() {
   const { gameId } = useParams();
   const navigate = useNavigate();
-  const { results, setResults, resetGame, isSinglePlayer } = useGameStore();
+  const { results, setResults, resetGame, isSinglePlayer, game } = useGameStore();
+  const votingMode = game?.votingMode || 'star';
   const [isLoading, setIsLoadingLocal] = useState(true);
   const [expandedItems, setExpandedItems] = useState({});
   const [revealPhase, setRevealPhase] = useState(PHASE_DRUMROLL);
@@ -137,6 +138,16 @@ function Results() {
 
     revealTimers.current = [t1, t2, t3, t4];
   }, [launchConfetti]);
+
+  // Recover game data on reload so votingMode is available
+  useEffect(() => {
+    if (!game) {
+      gameApi.getGame(gameId).then(res => {
+        const g = res.data.game || res.data;
+        if (g) useGameStore.getState().setGame(g);
+      }).catch(() => {});
+    }
+  }, [gameId, game]);
 
   useEffect(() => {
     socketService.disconnect();
@@ -342,7 +353,7 @@ function Results() {
               {/* Player Info */}
               <div className="podium-player-name">{result.username}</div>
               <div className="podium-score">
-                <span className="star">★</span>
+                <span className="star">{votingMode === 'ranking' ? '#' : '★'}</span>
                 <span>{result.score.toFixed(1)}</span>
               </div>
 
@@ -393,7 +404,7 @@ function Results() {
                     <div className="result-item-count">{result.products.length} items</div>
                   </div>
                   <div className="result-score">
-                    <span>★</span>
+                    <span>{votingMode === 'ranking' ? '#' : '★'}</span>
                     <span>{result.score.toFixed(1)}</span>
                   </div>
                   <button className="view-items-btn-sm" onClick={() => toggleItems(result.outfitId)}>

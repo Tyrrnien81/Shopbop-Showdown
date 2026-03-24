@@ -2991,6 +2991,239 @@ input::placeholder {
 }
 
 /* ============================================
+   RANKING MODE
+   ============================================ */
+
+.ranking-list {
+  max-width: 600px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rank-item {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.rank-item:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.rank-item.rank-dragging {
+  opacity: 0.4;
+  transform: scale(0.97);
+}
+
+.rank-item.rank-drag-over {
+  border-color: var(--primary-orange);
+  box-shadow: 0 0 0 2px rgba(238, 74, 27, 0.3);
+}
+
+.rank-item-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  cursor: grab;
+}
+
+.rank-item-main:active {
+  cursor: grabbing;
+}
+
+.rank-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+  flex-shrink: 0;
+}
+
+.rank-item:first-child .rank-badge {
+  background: var(--primary-orange);
+  color: white;
+}
+
+.rank-item:nth-child(2) .rank-badge {
+  background: rgba(192, 192, 192, 0.3);
+  color: white;
+}
+
+.rank-item:nth-child(3) .rank-badge {
+  background: rgba(205, 127, 50, 0.3);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.rank-drag-handle {
+  color: rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.rank-outfit-preview {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.rank-outfit-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rank-outfit-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 1.2rem;
+}
+
+.rank-outfit-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.rank-outfit-name {
+  display: block;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rank-outfit-details {
+  display: block;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin-top: 2px;
+}
+
+.rank-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.rank-move-btn,
+.rank-expand-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.rank-move-btn:hover:not(:disabled),
+.rank-expand-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: white;
+}
+
+.rank-move-btn:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+/* Expanded detail within a rank item */
+.rank-item-expanded {
+  padding: 0 16px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 4px;
+}
+
+.rank-expanded-model {
+  margin-top: 12px;
+  border-radius: 10px;
+  overflow: hidden;
+  max-height: 300px;
+}
+
+.rank-expanded-model img {
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+}
+
+.rank-expanded-products {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.rank-expanded-product {
+  flex-shrink: 0;
+  width: 100px;
+  text-align: center;
+}
+
+.rank-expanded-product img {
+  width: 100px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.rank-expanded-product-info {
+  margin-top: 6px;
+}
+
+.rank-expanded-product-name {
+  display: block;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.7);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rank-expanded-product-price {
+  display: block;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 2px;
+}
+
+/* Submit button area */
+.ranking-submit {
+  margin-top: 32px;
+  text-align: center;
+  padding-bottom: 48px;
+}
+
+/* ============================================
    RESULTS PAGE
    ============================================ */
 .results-container {
