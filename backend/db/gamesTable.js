@@ -1,4 +1,4 @@
-const { GetCommand, PutCommand, UpdateCommand } = require('@aws-sdk/lib-dynamodb');
+const { GetCommand, PutCommand, UpdateCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { docClient } = require('./dynamoClient');
 
 const TABLE = 'Games';
@@ -52,4 +52,17 @@ async function updateGameStatus(gameId, status, extraFields = {}) {
   return Attributes;
 }
 
-module.exports = { getGame, createGame, appendPlayerId, updateGameStatus };
+async function scanAllGames() {
+  const items = [];
+  let lastKey;
+  do {
+    const params = { TableName: TABLE };
+    if (lastKey) params.ExclusiveStartKey = lastKey;
+    const { Items, LastEvaluatedKey } = await docClient.send(new ScanCommand(params));
+    items.push(...(Items || []));
+    lastKey = LastEvaluatedKey;
+  } while (lastKey);
+  return items;
+}
+
+module.exports = { getGame, createGame, appendPlayerId, updateGameStatus, scanAllGames };
