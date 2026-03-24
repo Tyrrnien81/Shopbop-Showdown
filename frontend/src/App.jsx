@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Component } from 'react';
-import { Home, CreateGame, Lobby, Game, Voting, Results } from './pages';
+import { Home, CreateGame, Lobby, ThemeVote, Game, Voting, Results } from './pages';
 import GuidedTour from './components/GuidedTour';
 import useGameStore from './store/gameStore';
 import './App.css';
@@ -50,6 +50,7 @@ function AppContent() {
           <Route path="/" element={<Home />} />
           <Route path="/create" element={<CreateGame />} />
           <Route path="/lobby/:gameId" element={<Lobby />} />
+          <Route path="/theme-vote/:gameId" element={<ThemeVote />} />
           <Route path="/game/:gameId" element={<Game />} />
           <Route path="/voting/:gameId" element={<Voting />} />
           <Route path="/results/:gameId" element={<Results />} />

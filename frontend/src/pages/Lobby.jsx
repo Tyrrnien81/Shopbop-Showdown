@@ -58,15 +58,20 @@ function Lobby() {
     const onGameStarted = () => {
       navigate(`/game/${gameId}`);
     };
+    const onThemeVoteStart = () => {
+      navigate(`/theme-vote/${gameId}`);
+    };
 
     socketService.on('player-joined', onPlayerJoined);
     socketService.on('player-ready-changed', onPlayerReadyChanged);
     socketService.on('game-started', onGameStarted);
+    socketService.on('theme-vote-start', onThemeVoteStart);
 
     return () => {
       socketService.off('player-joined', onPlayerJoined);
       socketService.off('player-ready-changed', onPlayerReadyChanged);
       socketService.off('game-started', onGameStarted);
+      socketService.off('theme-vote-start', onThemeVoteStart);
     };
   }, [currentPlayer?.playerId, gameId, navigate, setPlayers]);
 
@@ -96,8 +101,10 @@ function Lobby() {
       setGame(data);
       setPlayers(data.players || []);
 
-      // If game started, navigate to game page
-      if (data.status === 'PLAYING') {
+      // If game started, navigate to appropriate page
+      if (data.status === 'THEME_VOTING') {
+        navigate(`/theme-vote/${gameId}`);
+      } else if (data.status === 'PLAYING') {
         navigate(`/game/${gameId}`);
       }
     } catch {
@@ -107,10 +114,10 @@ function Lobby() {
     }
   };
 
-  const handleJoinGame = async (username) => {
+  const handleJoinGame = async (username, asAudience = false) => {
     setJoining(true);
     try {
-      const response = await gameApi.joinGame(gameId, { username });
+      const response = await gameApi.joinGame(gameId, { username, isAudience: asAudience });
       const { player, game: joinedGame } = response.data;
       setCurrentPlayer(player);
       setGame(joinedGame);
@@ -140,8 +147,13 @@ function Lobby() {
   const handleStartGame = async () => {
     setLoading(true);
     try {
-      await gameApi.startGame(gameId);
-      navigate(`/game/${gameId}`);
+      const res = await gameApi.startGame(gameId);
+      // If theme voting phase, navigate there; otherwise straight to game
+      if (res.data.game?.status === 'THEME_VOTING') {
+        navigate(`/theme-vote/${gameId}`);
+      } else {
+        navigate(`/game/${gameId}`);
+      }
     } catch (error) {
       setError(error.response?.data?.error || 'Failed to start game');
     } finally {
@@ -205,33 +217,50 @@ function Lobby() {
             <span>{gameId}</span>
           </div>
         </header>
-        <div style={{ maxWidth: '400px', margin: '40px auto', textAlign: 'center' }}>
+        <div style={{ maxWidth: '420px', margin: '40px auto', textAlign: 'center' }}>
           <p style={{ color: 'var(--text-light)', marginBottom: '24px' }}>Enter your name to join the showdown</p>
+          <input
+            type="text"
+            placeholder="Your fashion name..."
+            value={joinUsername}
+            onChange={(e) => setJoinUsername(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && joinUsername.trim() && handleJoinGame(joinUsername.trim())}
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-light)',
+              color: 'var(--text-primary)',
+              padding: '10px 16px',
+              borderRadius: '8px',
+              fontSize: '1rem',
+              width: '100%',
+              marginBottom: '16px',
+            }}
+          />
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-            <input
-              type="text"
-              placeholder="Your fashion name..."
-              value={joinUsername}
-              onChange={(e) => setJoinUsername(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && joinUsername.trim() && handleJoinGame(joinUsername.trim())}
-              style={{
-                background: 'var(--bg-card)',
-                border: '1px solid var(--border-light)',
-                color: 'var(--text-primary)',
-                padding: '10px 16px',
-                borderRadius: '8px',
-                fontSize: '1rem',
-                width: '220px',
-              }}
-            />
             <button
               onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim())}
               className="btn btn-primary"
               disabled={joining || !joinUsername.trim()}
+              style={{ flex: 1 }}
             >
-              {joining ? 'Joining...' : 'Join'}
+              {joining ? 'Joining...' : 'Play'}
+            </button>
+            <button
+              onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim(), true)}
+              className="btn btn-outline"
+              disabled={joining || !joinUsername.trim()}
+              style={{ flex: 1 }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              Watch & Vote
             </button>
           </div>
+          <p style={{ color: 'var(--text-light)', fontSize: '0.8rem', marginTop: '12px' }}>
+            Audience members can vote on outfits but don't create their own
+          </p>
           {error && <div className="error-message" style={{ marginTop: '16px' }}>{error}</div>}
         </div>
       </div>
@@ -249,7 +278,8 @@ function Lobby() {
     );
   }
 
-  const allReady = players.length >= 2 && players.every((p) => p.isReady);
+  const contestants = players.filter(p => !p.isAudience);
+  const allReady = contestants.length >= 2 && players.every((p) => p.isReady);
 
   return (
     <div className="lobby-container">
@@ -292,8 +322,8 @@ function Lobby() {
         </div>
       )}
 
-      {/* Photo Section */}
-      <section className="photo-upload-section">
+      {/* Photo Section — hidden for audience */}
+      {!currentPlayer?.isAudience && <section className="photo-upload-section">
         <h2>Your Photo</h2>
         <p className="photo-upload-hint">Used so the AI try-on model looks like you!</p>
 
@@ -458,7 +488,7 @@ function Lobby() {
             </p>
           </div>
         )}
-      </section>
+      </section>}
 
       {/* Players Section */}
       <section className="players-section">
@@ -481,9 +511,10 @@ function Lobby() {
                 <div className="player-name">
                   {player.username}
                   {player.isHost && <span style={{ marginLeft: '6px' }}>👑</span>}
+                  {player.isAudience && <span style={{ marginLeft: '6px', fontSize: '0.7rem', background: 'var(--border-light)', padding: '2px 6px', borderRadius: '8px', color: 'var(--text-muted)' }}>Audience</span>}
                 </div>
                 <div className="player-status-badge">
-                  {player.isReady ? '● Ready' : '○ Not Ready'}
+                  {player.isAudience ? '👁 Watching' : player.isReady ? '● Ready' : '○ Not Ready'}
                 </div>
               </div>
             </div>
@@ -523,7 +554,7 @@ function Lobby() {
 
       {/* Actions */}
       <div className="lobby-actions">
-        {currentPlayer && (
+        {currentPlayer && !currentPlayer.isAudience && (
           <button onClick={handleToggleReady} className={`btn ${currentPlayer?.isReady ? 'btn-secondary' : 'btn-outline'}`}>
             {currentPlayer?.isReady ? (
               <>

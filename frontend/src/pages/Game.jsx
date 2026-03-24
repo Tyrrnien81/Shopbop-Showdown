@@ -38,6 +38,7 @@ function Game() {
   const navigate = useNavigate();
   const {
     game,
+    currentPlayer,
     currentOutfit,
     userPhoto,
     setUserPhoto,
@@ -586,6 +587,52 @@ function Game() {
             <h2>Loading Game...</h2>
             <p>Fetching game data, hang tight!</p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Audience spectator screen — audience members wait here until voting
+  if (currentPlayer?.isAudience) {
+    const pct = submissionStatus.total > 0 ? (submissionStatus.submitted / submissionStatus.total) * 100 : 0;
+    return (
+      <div className="waiting-room">
+        <div className="waiting-room-card">
+          <div className="waiting-room-brand">
+            <img src="/shopbop-favicon.svg" alt="Shopbop" style={{ width: 32, height: 32 }} />
+            <span>Style Showdown</span>
+          </div>
+          <div className="audience-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            Audience Mode
+          </div>
+          <div className="waiting-room-status">
+            <h2>Players are styling...</h2>
+            <p>Sit back and relax! You'll vote on the outfits once everyone submits.</p>
+          </div>
+          {submissionStatus.total > 0 && (
+            <div className="waiting-room-progress">
+              <div className="waiting-room-progress-header">
+                <span>Outfits Submitted</span>
+                <span className="waiting-room-progress-count">{submissionStatus.submitted}/{submissionStatus.total}</span>
+              </div>
+              <div className="waiting-room-progress-bar">
+                <div className="waiting-room-progress-fill" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          )}
+          {timeRemaining > 0 && (
+            <div className="waiting-room-timer">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              {Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')} remaining
+            </div>
+          )}
         </div>
       </div>
     );

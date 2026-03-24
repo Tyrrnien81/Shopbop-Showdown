@@ -44,14 +44,18 @@ function Voting() {
   const { gameId } = useParams();
   const navigate = useNavigate();
   const {
-    outfits,
+    outfits: allOutfits,
     setOutfits,
     hasVoted,
     setHasVoted,
     setLoading,
     setError,
     error,
+    currentPlayer,
   } = useGameStore();
+
+  // Filter out the current player's own outfit so they can't vote on it
+  const outfits = allOutfits.filter(o => o.playerId !== currentPlayer?.playerId);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [ratings, setRatings] = useState({});

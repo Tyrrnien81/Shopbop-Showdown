@@ -37,6 +37,8 @@ export const gameApi = {
   readyToggle: (gameId, playerData) => api.post(`/games/${gameId}/ready`, playerData),
   startGame: (gameId) => api.post(`/games/${gameId}/start`),
   getPlayers: (gameId) => api.get(`/games/${gameId}/players`),
+  voteTheme: (gameId, data) => api.post(`/games/${gameId}/theme-vote`, data),
+  getThemeVote: (gameId) => api.get(`/games/${gameId}/theme-vote`),
 };
 
 // Outfit Management APIs

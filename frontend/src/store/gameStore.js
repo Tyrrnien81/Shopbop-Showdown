@@ -13,7 +13,7 @@ const useGameStore = create((set, get) => ({
   game: null,
   players: [],
   currentPlayer: loadSession('ss_currentPlayer') || null,
-  gameStatus: null, // LOBBY | IN_PROGRESS | VOTING | COMPLETED
+  gameStatus: null, // LOBBY | THEME_VOTING | IN_PROGRESS | VOTING | COMPLETED
   isSinglePlayer: false,
 
   // Outfit State
