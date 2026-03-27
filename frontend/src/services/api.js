@@ -60,6 +60,12 @@ export const productApi = {
   getCategories: () => api.get('/categories'),
 };
 
+// Game history and popular products
+export const historyApi = {
+  getHistory: () => api.get('/games/history'),
+  getPopularProducts: (limit = 12) => api.get('/popular-products', { params: { limit } }),
+};
+
 // Chat Assistant API
 export const chatApi = {
   sendMessage: (data) => api.post('/chat/message', data),
