@@ -155,12 +155,29 @@ function Home() {
           </button>
         </div>
 
-        <button onClick={startTour} className="how-it-works-link">
-          How It Works
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M5 12h14M12 5l7 7-7 7" />
-          </svg>
-        </button>
+        <div className="home-secondary-actions">
+          <button onClick={() => navigate('/hall-of-fame?tab=winners')} className="home-secondary-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+            </svg>
+            Past Winners
+          </button>
+          <span className="home-secondary-divider">·</span>
+          <button onClick={() => navigate('/hall-of-fame?tab=popular')} className="home-secondary-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+              <polyline points="17 6 23 6 23 12" />
+            </svg>
+            Popular Clothes
+          </button>
+          <span className="home-secondary-divider">·</span>
+          <button onClick={startTour} className="home-secondary-btn">
+            How It Works
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Join Modal */}
