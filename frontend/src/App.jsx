@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { Component } from 'react';
-import { Home, CreateGame, Lobby, ThemeVote, Game, Voting, Results, Analytics } from './pages';
+import { Home, CreateGame, Lobby, ThemeVote, Game, Voting, Results, Analytics, HallOfFame } from './pages';
 import GuidedTour from './components/GuidedTour';
 import useGameStore from './store/gameStore';
 import './App.css';
@@ -55,6 +55,7 @@ function AppContent() {
           <Route path="/voting/:gameId" element={<Voting />} />
           <Route path="/results/:gameId" element={<Results />} />
           <Route path="/admin" element={<Analytics />} />
+          <Route path="/hall-of-fame" element={<HallOfFame />} />
         </Routes>
       </div>
       <GuidedTour active={tourActive} onClose={endTour} />

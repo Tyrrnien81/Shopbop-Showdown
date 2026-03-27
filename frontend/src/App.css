@@ -3490,6 +3490,19 @@ input::placeholder {
   justify-content: center;
   gap: 16px;
   margin-top: 48px;
+  flex-wrap: wrap;
+}
+
+.btn-past-winners {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  border: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+.btn-past-winners:hover {
+  border-color: var(--primary-orange);
+  color: var(--primary-orange);
+  background: rgba(238, 74, 27, 0.08);
 }
 
 /* === Dramatic Reveal Animations === */
@@ -3636,6 +3649,231 @@ input::placeholder {
 
 .results-actions-reveal {
   animation: revealFadeIn 0.6s ease-out;
+}
+
+/* ============================================================
+   PAST GAME WINNERS SECTION
+   ============================================================ */
+.past-games-section {
+  max-width: 640px;
+  margin: 48px auto 0;
+  padding: 0 16px;
+}
+
+.past-games-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 16px;
+}
+
+.past-games-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.past-game-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.past-game-card:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(238, 74, 27, 0.35);
+}
+
+.past-game-img {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.past-game-img-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.past-game-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.past-game-theme {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.past-game-winner {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.past-game-crown {
+  font-size: 0.75rem;
+}
+
+.past-game-score {
+  color: #FFD700;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 2px;
+}
+
+.past-game-meta {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.past-game-arrow {
+  color: rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.past-game-card:hover .past-game-arrow {
+  color: var(--primary-orange);
+}
+
+/* ============================================================
+   POPULAR PRODUCTS SECTION
+   ============================================================ */
+.popular-products-section {
+  max-width: 900px;
+  margin: 48px auto 64px;
+  padding: 0 16px;
+}
+
+.popular-products-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 4px;
+}
+
+.popular-products-subtitle {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin-bottom: 16px;
+}
+
+.popular-products-scroll {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.popular-product-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s;
+}
+
+.popular-product-card:hover {
+  border-color: rgba(238, 74, 27, 0.3);
+}
+
+.popular-product-img-wrap {
+  position: relative;
+}
+
+.popular-product-img {
+  width: 100%;
+  aspect-ratio: 3/4;
+  object-fit: cover;
+  display: block;
+}
+
+.popular-product-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--primary-orange);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 20px;
+}
+
+.popular-product-info {
+  padding: 8px 10px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.popular-product-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.popular-product-brand {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.popular-product-price {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+}
+
+.popular-product-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 6px 10px 10px;
+  padding: 5px;
+  background: rgba(238, 74, 27, 0.12);
+  border: 1px solid rgba(238, 74, 27, 0.3);
+  border-radius: 6px;
+  color: var(--primary-orange);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.popular-product-link:hover {
+  background: rgba(238, 74, 27, 0.22);
 }
 
 /* Podium Model Image (AI generated — primary display) */
@@ -4427,6 +4665,394 @@ input::placeholder {
 
 .how-it-works-link:hover {
   color: var(--primary-orange);
+}
+
+/* Home secondary action row */
+.home-secondary-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.home-secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.05em;
+  padding: 0;
+  transition: color 0.2s;
+}
+
+.home-secondary-btn:hover {
+  color: var(--primary-orange);
+}
+
+.home-secondary-divider {
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 0.8rem;
+  user-select: none;
+}
+
+/* ============================================================
+   HALL OF FAME PAGE
+   ============================================================ */
+.hof-container {
+  min-height: 100vh;
+  background: var(--bg-dark);
+  color: white;
+  padding: 32px 40px 80px;
+}
+
+.hof-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 36px;
+}
+
+.hof-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 8px 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-top: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.hof-back-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: white;
+}
+
+.hof-title-block {
+  flex: 1;
+}
+
+.hof-title {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.hof-subtitle {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Tabs */
+.hof-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 28px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.hof-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: none;
+  border: none;
+  border-radius: 7px;
+  padding: 10px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.hof-tab.active {
+  background: var(--primary-orange);
+  color: white;
+}
+
+.hof-tab:not(.active):hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.hof-tab-count {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  min-width: 22px;
+  text-align: center;
+}
+
+.hof-tab.active .hof-tab-count {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Loading / Empty */
+.hof-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 60px 0;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.9rem;
+}
+
+.hof-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 60px 0;
+  text-align: center;
+}
+
+.hof-empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 4px;
+}
+
+.hof-empty p {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0;
+}
+
+.hof-empty-sub {
+  font-size: 0.82rem !important;
+  color: rgba(255, 255, 255, 0.3) !important;
+  margin-bottom: 16px !important;
+}
+
+/* Winners list */
+.hof-winners-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hof-winner-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.hof-winner-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(238, 74, 27, 0.3);
+}
+
+.hof-winner-rank {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.3);
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.hof-winner-img {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.hof-winner-img-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.hof-winner-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.hof-winner-theme {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hof-winner-name {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.65);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hof-crown {
+  font-size: 0.78rem;
+}
+
+.hof-winner-score {
+  color: #FFD700;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.hof-winner-meta {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.hof-winner-cta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.3);
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.hof-winner-card:hover .hof-winner-cta {
+  color: var(--primary-orange);
+}
+
+/* Products grid */
+.hof-products-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+.hof-product-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s;
+}
+
+.hof-product-card:hover {
+  border-color: rgba(238, 74, 27, 0.3);
+}
+
+.hof-product-img-wrap {
+  position: relative;
+}
+
+.hof-product-img {
+  width: 100%;
+  aspect-ratio: 3/4;
+  object-fit: cover;
+  display: block;
+}
+
+.hof-product-rank {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 20px;
+}
+
+.hof-product-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--primary-orange);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 20px;
+}
+
+.hof-product-info {
+  padding: 10px 10px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.hof-product-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: white;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.hof-product-brand {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.hof-product-price {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.65);
+  font-weight: 500;
+}
+
+.hof-product-shop-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 8px 10px 10px;
+  padding: 6px;
+  background: rgba(238, 74, 27, 0.1);
+  border: 1px solid rgba(238, 74, 27, 0.25);
+  border-radius: 7px;
+  color: var(--primary-orange);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.hof-product-shop-btn:hover {
+  background: rgba(238, 74, 27, 0.2);
 }
 
 /* ===== Guided Tour ===== */

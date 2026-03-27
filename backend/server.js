@@ -478,6 +478,109 @@ app.post('/api/games', async (req, res) => {
   }
 });
 
+// GET /api/games/history — public, last 20 completed games with winner summary
+app.get('/api/games/history', async (req, res) => {
+  try {
+    const [allGames, allOutfits, allVotes] = await Promise.all([
+      db.scanAllGames(),
+      db.scanAllOutfits(),
+      db.scanAllVotes(),
+    ]);
+
+    const completedGames = allGames
+      .filter(g => g.status === 'COMPLETED' && !g.singlePlayer && (g.playerIds?.length || 0) > 1)
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      .slice(0, 20);
+
+    // Group outfits by gameId
+    const outfitsByGame = {};
+    for (const o of allOutfits) {
+      if (!outfitsByGame[o.gameId]) outfitsByGame[o.gameId] = [];
+      outfitsByGame[o.gameId].push(o);
+    }
+
+    // Accumulate votes per outfitId
+    const voteAccum = {};
+    for (const v of allVotes) {
+      if (!voteAccum[v.outfitId]) voteAccum[v.outfitId] = { total: 0, count: 0 };
+      voteAccum[v.outfitId].total += v.rating;
+      voteAccum[v.outfitId].count += 1;
+    }
+
+    const history = completedGames.map(game => {
+      const outfits = outfitsByGame[game.gameId] || [];
+      const scored = outfits.map(o => {
+        const { total = 0, count = 0 } = voteAccum[o.outfitId] || {};
+        return {
+          username: o.username || 'Unknown',
+          score: count > 0 ? total / count : 0,
+          totalVotes: count,
+          products: o.products || [],
+        };
+      });
+      scored.sort((a, b) => b.score - a.score);
+      const winner = scored[0] || null;
+
+      return {
+        gameId: game.gameId,
+        themeName: game.themeName || game.theme || 'Unknown Theme',
+        createdAt: game.createdAt,
+        playerCount: game.playerIds?.length || 0,
+        winner: winner ? {
+          username: winner.username,
+          score: parseFloat(winner.score.toFixed(1)),
+          totalVotes: winner.totalVotes,
+          previewImage: winner.products[0]?.imageUrl || null,
+        } : null,
+      };
+    });
+
+    res.json({ history });
+  } catch (err) {
+    console.error('History error:', err.message);
+    res.status(500).json({ error: 'Failed to load history' });
+  }
+});
+
+// GET /api/popular-products — public, most picked products across all completed games
+app.get('/api/popular-products', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 12, 30);
+    const allOutfits = await db.scanAllOutfits();
+
+    const productMap = new Map();
+    for (const outfit of allOutfits) {
+      if (!Array.isArray(outfit.products)) continue;
+      for (const p of outfit.products) {
+        const id = p.id || p.productSin || p.asin;
+        if (!id || !p.imageUrl) continue;
+        if (!productMap.has(id)) {
+          productMap.set(id, {
+            id,
+            name: p.name || p.productName || '',
+            brand: p.brand || p.designerName || '',
+            category: p.category || 'unknown',
+            price: p.price ?? p.retailPrice ?? null,
+            imageUrl: p.imageUrl || p.image || null,
+            productUrl: p.productUrl || null,
+            pickCount: 0,
+          });
+        }
+        productMap.get(id).pickCount += 1;
+      }
+    }
+
+    const products = Array.from(productMap.values())
+      .sort((a, b) => b.pickCount - a.pickCount)
+      .slice(0, limit);
+
+    res.json({ products });
+  } catch (err) {
+    console.error('Popular products error:', err.message);
+    res.status(500).json({ error: 'Failed to load popular products' });
+  }
+});
+
 // GET /api/games/:gameId — get game details
 app.get('/api/games/:gameId', async (req, res) => {
   try {
