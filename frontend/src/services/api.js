@@ -37,6 +37,8 @@ export const gameApi = {
   readyToggle: (gameId, playerData) => api.post(`/games/${gameId}/ready`, playerData),
   startGame: (gameId) => api.post(`/games/${gameId}/start`),
   getPlayers: (gameId) => api.get(`/games/${gameId}/players`),
+  voteTheme: (gameId, data) => api.post(`/games/${gameId}/theme-vote`, data),
+  getThemeVote: (gameId) => api.get(`/games/${gameId}/theme-vote`),
 };
 
 // Outfit Management APIs
@@ -56,6 +58,12 @@ export const productApi = {
   searchProducts: (params) => api.get('/products/search', { params }),
   getProduct: (productSin) => api.get(`/products/${productSin}`),
   getCategories: () => api.get('/categories'),
+};
+
+// Game history and popular products
+export const historyApi = {
+  getHistory: () => api.get('/games/history'),
+  getPopularProducts: (limit = 12) => api.get('/popular-products', { params: { limit } }),
 };
 
 // Chat Assistant API

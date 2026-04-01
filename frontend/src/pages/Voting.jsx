@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { gameApi, outfitApi, voteApi } from '../services/api';
 import useGameStore from '../store/gameStore';
@@ -44,69 +44,115 @@ function Voting() {
   const { gameId } = useParams();
   const navigate = useNavigate();
   const {
-    outfits,
+    game,
+    outfits: allOutfits,
     setOutfits,
     hasVoted,
     setHasVoted,
     setLoading,
     setError,
     error,
+    currentPlayer,
   } = useGameStore();
 
+  const votingMode = game?.votingMode || 'star';
+
+  // Filter out the current player's own outfit so they can't vote on it
+  const outfits = allOutfits.filter(o => o.playerId !== currentPlayer?.playerId);
+
+  // Star mode state
   const [currentIndex, setCurrentIndex] = useState(0);
   const [ratings, setRatings] = useState({});
-  const [votingComplete, setVotingComplete] = useState(false);
   const [hoveredStar, setHoveredStar] = useState(null);
-  const [timeLeft, setTimeLeft] = useState(null); // seconds remaining in game
-  const [revealing, setRevealing] = useState(true); // outfit reveal animation
+  const [revealing, setRevealing] = useState(true);
+
+  // Ranking mode state
+  const [rankedOutfits, setRankedOutfits] = useState([]);
+  const [dragIndex, setDragIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
+  const [expandedRankItem, setExpandedRankItem] = useState(null);
+  // Touch drag state
+  const touchStartY = useRef(null);
+  const touchCurrentIndex = useRef(null);
+
+  // Shared state
+  const [votingComplete, setVotingComplete] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(null);
+  const [voteStatus, setVoteStatus] = useState({ voted: 0, total: 0, players: [] });
+
+  // Initialize rankedOutfits when outfits load (ranking mode)
+  useEffect(() => {
+    if (votingMode === 'ranking' && outfits.length > 0 && rankedOutfits.length === 0) {
+      setRankedOutfits([...outfits]);
+    }
+  }, [votingMode, outfits, rankedOutfits.length]);
+
+  // Recover game data in store on reload
+  useEffect(() => {
+    if (!useGameStore.getState().game) {
+      gameApi.getGame(gameId).then(res => {
+        const g = res.data.game || res.data;
+        if (g) useGameStore.getState().setGame(g);
+      }).catch(() => {});
+    }
+  }, [gameId]);
 
   useEffect(() => {
     fetchOutfits();
-    // Fetch game info and start a live countdown
     let interval;
     (async () => {
       try {
         const response = await gameApi.getGame(gameId);
-        const game = response.data;
+        const game = response.data.game || response.data;
         if (game.startedAt && game.timeLimit) {
           const startMs = new Date(game.startedAt).getTime();
           const endMs = startMs + game.timeLimit * 1000;
-
           const tick = () => {
             const remaining = Math.max(0, Math.floor((endMs - Date.now()) / 1000));
             setTimeLeft(remaining);
             if (remaining <= 0) clearInterval(interval);
           };
-
-          tick(); // set immediately
+          tick();
           interval = setInterval(tick, 1000);
         }
       } catch { /* ignore */ }
     })();
-
     return () => { if (interval) clearInterval(interval); };
   }, [gameId]);
 
-  // Ensure socket is connected and listen for vote completion
+  // Poll vote status
+  useEffect(() => {
+    const fetchVoteStatus = async () => {
+      try {
+        const response = await gameApi.getPlayers(gameId);
+        const playerList = response.data.players || [];
+        const voted = playerList.filter(p => p.hasVoted).length;
+        setVoteStatus({
+          voted,
+          total: playerList.length,
+          players: playerList.map(p => ({ name: p.username, voted: p.hasVoted })),
+        });
+      } catch { /* ignore */ }
+    };
+    fetchVoteStatus();
+    const poll = setInterval(fetchVoteStatus, 3000);
+    return () => clearInterval(poll);
+  }, [gameId]);
+
+  // Socket listener for vote completion
   useEffect(() => {
     const { currentPlayer } = useGameStore.getState();
     if (currentPlayer?.playerId) {
       socketService.connect(gameId, currentPlayer.playerId);
     }
-
     const onVoteSubmitted = ({ isComplete }) => {
-      if (isComplete) {
-        setVotingComplete(true);
-      }
+      if (isComplete) setVotingComplete(true);
     };
-
     socketService.on('vote-submitted', onVoteSubmitted);
     return () => socketService.off('vote-submitted', onVoteSubmitted);
   }, [gameId]);
 
-  const handleGoBack = () => {
-    navigate(`/game/${gameId}`);
-  };
+  const handleGoBack = () => navigate(`/game/${gameId}`);
 
   const fetchOutfits = async () => {
     setLoading(true);
@@ -121,16 +167,16 @@ function Voting() {
     }
   };
 
+  // ── Star mode helpers ──
   const currentOutfit = outfits[currentIndex] || mockOutfits[currentIndex];
   const totalOutfits = outfits.length || mockOutfits.length;
   const ratedCount = Object.keys(ratings).length;
-  const progressPercentage = (ratedCount / totalOutfits) * 100;
+  const progressPercentage = votingMode === 'star'
+    ? (ratedCount / totalOutfits) * 100
+    : 100; // ranking is always "complete"
 
   const handleRating = (outfitId, rating) => {
-    setRatings((prev) => ({
-      ...prev,
-      [outfitId]: rating,
-    }));
+    setRatings(prev => ({ ...prev, [outfitId]: rating }));
   };
 
   const triggerReveal = () => {
@@ -138,27 +184,97 @@ function Voting() {
     setTimeout(() => setRevealing(false), 800);
   };
 
-  // Trigger reveal on initial load
-  useEffect(() => {
-    triggerReveal();
-  }, []);
+  useEffect(() => { triggerReveal(); }, []);
 
   const handleNext = () => {
     if (currentIndex < totalOutfits - 1) {
-      setCurrentIndex((prev) => prev + 1);
+      setCurrentIndex(prev => prev + 1);
       triggerReveal();
     }
   };
 
   const handlePrev = () => {
     if (currentIndex > 0) {
-      setCurrentIndex((prev) => prev - 1);
+      setCurrentIndex(prev => prev - 1);
       triggerReveal();
     }
   };
 
+  // ── Ranking mode drag-and-drop ──
+  const handleDragStart = (index) => {
+    setDragIndex(index);
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    setDragOverIndex(index);
+  };
+
+  const handleDrop = (index) => {
+    if (dragIndex === null || dragIndex === index) {
+      setDragIndex(null);
+      setDragOverIndex(null);
+      return;
+    }
+    const updated = [...rankedOutfits];
+    const [moved] = updated.splice(dragIndex, 1);
+    updated.splice(index, 0, moved);
+    setRankedOutfits(updated);
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setDragOverIndex(null);
+  };
+
+  // Touch-based reordering
+  const handleTouchStart = (e, index) => {
+    touchStartY.current = e.touches[0].clientY;
+    touchCurrentIndex.current = index;
+    setDragIndex(index);
+  };
+
+  const handleTouchMove = useCallback((e) => {
+    if (touchStartY.current === null || touchCurrentIndex.current === null) return;
+    const touch = e.touches[0];
+    const elements = document.querySelectorAll('.rank-item');
+    for (let i = 0; i < elements.length; i++) {
+      const rect = elements[i].getBoundingClientRect();
+      if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        if (i !== touchCurrentIndex.current) {
+          setDragOverIndex(i);
+        }
+        break;
+      }
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    if (touchCurrentIndex.current !== null && dragOverIndex !== null && touchCurrentIndex.current !== dragOverIndex) {
+      const updated = [...rankedOutfits];
+      const [moved] = updated.splice(touchCurrentIndex.current, 1);
+      updated.splice(dragOverIndex, 0, moved);
+      setRankedOutfits(updated);
+    }
+    touchStartY.current = null;
+    touchCurrentIndex.current = null;
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, [dragOverIndex, rankedOutfits]);
+
+  const moveRankItem = (fromIndex, toIndex) => {
+    if (toIndex < 0 || toIndex >= rankedOutfits.length) return;
+    const updated = [...rankedOutfits];
+    const [moved] = updated.splice(fromIndex, 1);
+    updated.splice(toIndex, 0, moved);
+    setRankedOutfits(updated);
+  };
+
+  // ── Submit votes ──
   const handleSubmitVotes = async () => {
-    if (ratedCount < totalOutfits) {
+    if (votingMode === 'star' && ratedCount < totalOutfits) {
       setError('Please rate all outfits before submitting');
       return;
     }
@@ -166,16 +282,20 @@ function Voting() {
     setLoading(true);
     try {
       const { currentPlayer } = useGameStore.getState();
-      const ratingsArray = Object.entries(ratings).map(([outfitId, rating]) => ({ outfitId, rating }));
 
       if (currentPlayer?.playerId) {
-        const response = await voteApi.castVote({ gameId, playerId: currentPlayer.playerId, ratings: ratingsArray });
+        let payload = { gameId, playerId: currentPlayer.playerId };
+
+        if (votingMode === 'ranking') {
+          payload.rankings = rankedOutfits.map(o => o.outfitId);
+        } else {
+          payload.ratings = Object.entries(ratings).map(([outfitId, rating]) => ({ outfitId, rating }));
+        }
+
+        const response = await voteApi.castVote(payload);
         const { votesRemaining } = response.data;
         setHasVoted(true);
-        if (votesRemaining === 0) {
-          setVotingComplete(true);
-        }
-        // Otherwise, socket 'vote-submitted' listener will set votingComplete
+        if (votesRemaining === 0) setVotingComplete(true);
       } else {
         setHasVoted(true);
         setTimeout(() => setVotingComplete(true), 2000);
@@ -187,10 +307,9 @@ function Voting() {
     }
   };
 
-  const handleViewResults = () => {
-    navigate(`/results/${gameId}`);
-  };
+  const handleViewResults = () => navigate(`/results/${gameId}`);
 
+  // ── Waiting / Complete screens (shared) ──
   if (hasVoted && !votingComplete) {
     return (
       <div className="voting-container">
@@ -198,6 +317,32 @@ function Voting() {
           <div className="spinner" style={{ borderColor: 'rgba(255,255,255,0.2)', borderTopColor: 'var(--primary-orange)' }}></div>
           <h2>Vote Submitted!</h2>
           <p style={{ color: 'rgba(255,255,255,0.6)' }}>Waiting for other players to vote...</p>
+          {voteStatus.total > 0 && (
+            <div className="vote-tracker" style={{ marginTop: '24px' }}>
+              <div className="vote-tracker-header">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                  <polyline points="22 4 12 14.01 9 11.01" />
+                </svg>
+                <span>{voteStatus.voted}/{voteStatus.total} Players Voted</span>
+              </div>
+              <div className="vote-tracker-players">
+                {voteStatus.players.map((p, i) => (
+                  <div key={i} className={`vote-tracker-player ${p.voted ? 'done' : ''}`}>
+                    <span className="vote-tracker-dot" />
+                    <span className="vote-tracker-name">{p.name}</span>
+                    {p.voted ? (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : (
+                      <span className="vote-tracker-pending">voting...</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -220,7 +365,7 @@ function Voting() {
     );
   }
 
-  if (!currentOutfit) {
+  if (!currentOutfit && votingMode === 'star') {
     return (
       <div className="voting-container">
         <div className="loading" style={{ color: 'white' }}>
@@ -231,6 +376,197 @@ function Voting() {
     );
   }
 
+  if (votingMode === 'ranking' && rankedOutfits.length === 0) {
+    return (
+      <div className="voting-container">
+        <div className="loading" style={{ color: 'white' }}>
+          <div className="spinner"></div>
+          <p>Loading outfits...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── RANKING MODE UI ──
+  if (votingMode === 'ranking') {
+    return (
+      <div className="voting-container">
+        <header className="voting-header">
+          <div className="voting-header-label">Round Complete</div>
+          <h1>Rank the Looks</h1>
+          <div className="voting-progress">
+            Drag to reorder — best look on top
+          </div>
+          {timeLeft !== null && timeLeft > 0 && (
+            <button onClick={handleGoBack} className="voting-go-back-btn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+              Go Back & Edit ({Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')} left)
+            </button>
+          )}
+        </header>
+
+        {/* Live Voting Tracker */}
+        {voteStatus.total > 0 && (
+          <div className="vote-tracker">
+            <div className="vote-tracker-header">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+              </svg>
+              <span>{voteStatus.voted}/{voteStatus.total} Votes In</span>
+            </div>
+            <div className="vote-tracker-players">
+              {voteStatus.players.map((p, i) => (
+                <div key={i} className={`vote-tracker-player ${p.voted ? 'done' : ''}`}>
+                  <span className="vote-tracker-dot" />
+                  <span className="vote-tracker-name">{p.name}</span>
+                  {p.voted ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : (
+                    <span className="vote-tracker-pending">voting...</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="error-message" style={{ maxWidth: '600px', margin: '0 auto 24px' }}>
+            {error}
+          </div>
+        )}
+
+        {/* Ranking List */}
+        <div className="ranking-list">
+          {rankedOutfits.map((outfit, index) => {
+            const isExpanded = expandedRankItem === outfit.outfitId;
+            return (
+              <div
+                key={outfit.outfitId}
+                className={`rank-item ${dragIndex === index ? 'rank-dragging' : ''} ${dragOverIndex === index ? 'rank-drag-over' : ''}`}
+                draggable
+                onDragStart={() => handleDragStart(index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDrop={() => handleDrop(index)}
+                onDragEnd={handleDragEnd}
+                onTouchStart={(e) => handleTouchStart(e, index)}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+              >
+                <div className="rank-item-main">
+                  {/* Rank badge */}
+                  <div className="rank-badge">
+                    {index + 1}
+                  </div>
+
+                  {/* Drag handle */}
+                  <div className="rank-drag-handle">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <line x1="3" y1="6" x2="21" y2="6" />
+                      <line x1="3" y1="12" x2="21" y2="12" />
+                      <line x1="3" y1="18" x2="21" y2="18" />
+                    </svg>
+                  </div>
+
+                  {/* Outfit preview */}
+                  <div className="rank-outfit-preview">
+                    {outfit.tryOnImage ? (
+                      <img src={outfit.tryOnImage} alt="look" referrerPolicy="no-referrer" />
+                    ) : outfit.products[0]?.imageUrl ? (
+                      <img src={outfit.products[0].imageUrl} alt="look" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="rank-outfit-placeholder">?</div>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="rank-outfit-info">
+                    <span className="rank-outfit-name">{outfit.playerName || 'Outfit'}</span>
+                    <span className="rank-outfit-details">
+                      {outfit.products.length} items &middot; ${outfit.totalPrice?.toLocaleString()}
+                    </span>
+                  </div>
+
+                  {/* Move buttons + expand */}
+                  <div className="rank-actions">
+                    <button
+                      className="rank-move-btn"
+                      onClick={() => moveRankItem(index, index - 1)}
+                      disabled={index === 0}
+                      title="Move up"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M18 15l-6-6-6 6" />
+                      </svg>
+                    </button>
+                    <button
+                      className="rank-move-btn"
+                      onClick={() => moveRankItem(index, index + 1)}
+                      disabled={index === rankedOutfits.length - 1}
+                      title="Move down"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    </button>
+                    <button
+                      className="rank-expand-btn"
+                      onClick={() => setExpandedRankItem(isExpanded ? null : outfit.outfitId)}
+                      title="View items"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                        style={{ transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
+                        <path d="M6 9l6 6 6-6" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Expanded item detail */}
+                {isExpanded && (
+                  <div className="rank-item-expanded">
+                    {outfit.tryOnImage && (
+                      <div className="rank-expanded-model">
+                        <img src={outfit.tryOnImage} alt="full look" referrerPolicy="no-referrer" />
+                      </div>
+                    )}
+                    <div className="rank-expanded-products">
+                      {outfit.products.map(product => (
+                        <div key={product.productSin} className="rank-expanded-product">
+                          <img src={product.imageUrl} alt={product.name} referrerPolicy="no-referrer" />
+                          <div className="rank-expanded-product-info">
+                            <span className="rank-expanded-product-name">{product.name}</span>
+                            <span className="rank-expanded-product-price">${product.price.toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Submit */}
+        <div className="ranking-submit">
+          <button onClick={handleSubmitVotes} className="btn btn-primary">
+            Submit Rankings
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── STAR MODE UI (original) ──
   return (
     <div className="voting-container">
       {/* Header */}
@@ -255,6 +591,34 @@ function Voting() {
           </button>
         )}
       </header>
+
+      {/* Live Voting Tracker */}
+      {voteStatus.total > 0 && (
+        <div className="vote-tracker">
+          <div className="vote-tracker-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+            <span>{voteStatus.voted}/{voteStatus.total} Votes In</span>
+          </div>
+          <div className="vote-tracker-players">
+            {voteStatus.players.map((p, i) => (
+              <div key={i} className={`vote-tracker-player ${p.voted ? 'done' : ''}`}>
+                <span className="vote-tracker-dot" />
+                <span className="vote-tracker-name">{p.name}</span>
+                {p.voted ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                ) : (
+                  <span className="vote-tracker-pending">voting...</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="error-message" style={{ maxWidth: '600px', margin: '0 auto 24px' }}>
@@ -310,6 +674,13 @@ function Voting() {
                       <span className="voting-side-item-cat">{product.category}</span>
                       <span className="voting-side-item-price">${product.price.toLocaleString()}</span>
                     </div>
+                    {product.productUrl && (
+                      <a href={product.productUrl} target="_blank" rel="noopener noreferrer" className="items-shop-link" title="Shop on Shopbop">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
+                        </svg>
+                      </a>
+                    )}
                   </div>
                 ))}
               </div>

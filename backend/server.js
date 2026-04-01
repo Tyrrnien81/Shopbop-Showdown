@@ -30,6 +30,87 @@ const SHOPBOP_CLIENT_ID = process.env.SHOPBOP_CLIENT_ID || 'Shopbop-UW-Team1-202
 
 let io;
 
+// In-memory cache for tryOnImages (too large for DynamoDB's 400KB item limit)
+const tryOnImageCache = new Map();
+
+// In-memory cache for theme voting (ephemeral, no need for DB)
+const themeVoteCache = new Map(); // gameId -> { options: [...], votes: { playerId: themeId }, timer }
+
+const ALL_THEMES = [
+  { id: 'runway', name: 'Runway Ready', description: 'High-fashion editorial looks.', icon: '✨' },
+  { id: 'trend', name: '2026 Trend Watch', description: 'The latest silhouettes and textures.', icon: '⚡' },
+  { id: 'ski', name: 'Apres Ski Chic', description: 'Luxury winter style for the lodge.', icon: '❄️' },
+  { id: 'street', name: 'Streetwear Icon', description: 'Urban staples and bold statements.', icon: '🏙️' },
+  { id: 'gala', name: 'Met Gala: Camp', description: 'Everything is extra. No limits.', icon: '💎' },
+  { id: 'beach', name: 'Beach Vacation', description: 'Resort wear and summer essentials.', icon: '🏖️' },
+];
+
+function pickRandomThemes(count = 3) {
+  const shuffled = [...ALL_THEMES].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
+function tallyThemeVotes(gameId) {
+  const cache = themeVoteCache.get(gameId);
+  if (!cache) return null;
+  const counts = {};
+  cache.options.forEach(t => { counts[t.id] = 0; });
+  Object.values(cache.votes).forEach(themeId => {
+    counts[themeId] = (counts[themeId] || 0) + 1;
+  });
+  // Find winner (most votes, tie-break random)
+  let maxVotes = -1;
+  let winners = [];
+  for (const [themeId, count] of Object.entries(counts)) {
+    if (count > maxVotes) { maxVotes = count; winners = [themeId]; }
+    else if (count === maxVotes) { winners.push(themeId); }
+  }
+  return winners[Math.floor(Math.random() * winners.length)];
+}
+
+async function finalizeThemeVoting(gameId) {
+  const cache = themeVoteCache.get(gameId);
+  if (!cache || cache.finalized) return;
+  cache.finalized = true;
+  if (cache.timer) clearTimeout(cache.timer);
+
+  const winningThemeId = tallyThemeVotes(gameId);
+  const winningTheme = ALL_THEMES.find(t => t.id === winningThemeId);
+
+  // Update game: set theme, transition to PLAYING
+  const now = new Date();
+  const game = await db.getGame(gameId);
+  if (!game) return;
+
+  const updatedGame = await db.updateGameStatus(gameId, 'PLAYING', {
+    theme: winningThemeId,
+    themeName: winningTheme?.name || winningThemeId,
+    startedAt: now.toISOString(),
+    endsAt: new Date(now.getTime() + game.timeLimit * 1000).toISOString(),
+  });
+
+  console.log(`Theme voting complete for ${gameId}: winner = ${winningThemeId}`);
+
+  if (io) {
+    io.to(gameId).emit('theme-vote-result', {
+      winningTheme: winningThemeId,
+      winningThemeName: winningTheme?.name,
+      votes: cache.votes,
+    });
+    // After a short delay, emit game-started so clients navigate
+    setTimeout(() => {
+      io.to(gameId).emit('game-started', {
+        gameId,
+        startedAt: updatedGame.startedAt,
+        endsAt: updatedGame.endsAt,
+        timeLimit: game.timeLimit,
+      });
+    }, 3000); // 3s to show the winning theme
+  }
+
+  themeVoteCache.delete(gameId);
+}
+
 // ============================================================
 // UTILITY FUNCTIONS
 // ============================================================
@@ -190,7 +271,9 @@ function normalizeProduct(item) {
     category,
     price,
     imageUrl,
-    productUrl: `https://www.shopbop.com/dp/${productSin}`,
+    productUrl: p.productDetailUrl
+      ? `https://www.shopbop.com${p.productDetailUrl}`
+      : `https://www.shopbop.com/dp/${productSin}`,
   };
 }
 
@@ -342,10 +425,10 @@ app.get('/api/products/:productSin', async (req, res) => {
 // POST /api/games — create a new game
 app.post('/api/games', async (req, res) => {
   try {
-    const { hostUsername, theme, budget, maxPlayers, timeLimit, singlePlayer } = req.body;
+    const { hostUsername, theme, budget, maxPlayers, timeLimit, singlePlayer, themeMode, votingMode } = req.body;
 
-    if (!hostUsername || !theme) {
-      return res.status(400).json({ error: 'hostUsername and theme are required' });
+    if (!hostUsername) {
+      return res.status(400).json({ error: 'hostUsername is required' });
     }
 
     const gameId = generateGameId();
@@ -378,6 +461,8 @@ app.post('/api/games', async (req, res) => {
       endsAt: null,
       endedAt: null,
       singlePlayer: Boolean(singlePlayer),
+      themeMode: themeMode || 'vote', // 'vote' or 'pick'
+      votingMode: votingMode || 'star', // 'star' or 'ranking'
     };
 
     await Promise.all([
@@ -390,6 +475,109 @@ app.post('/api/games', async (req, res) => {
   } catch (err) {
     console.error('Create game error:', err.message);
     res.status(500).json({ error: 'Failed to create game' });
+  }
+});
+
+// GET /api/games/history — public, last 20 completed games with winner summary
+app.get('/api/games/history', async (req, res) => {
+  try {
+    const [allGames, allOutfits, allVotes] = await Promise.all([
+      db.scanAllGames(),
+      db.scanAllOutfits(),
+      db.scanAllVotes(),
+    ]);
+
+    const completedGames = allGames
+      .filter(g => g.status === 'COMPLETED' && !g.singlePlayer && (g.playerIds?.length || 0) > 1)
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+      .slice(0, 20);
+
+    // Group outfits by gameId
+    const outfitsByGame = {};
+    for (const o of allOutfits) {
+      if (!outfitsByGame[o.gameId]) outfitsByGame[o.gameId] = [];
+      outfitsByGame[o.gameId].push(o);
+    }
+
+    // Accumulate votes per outfitId
+    const voteAccum = {};
+    for (const v of allVotes) {
+      if (!voteAccum[v.outfitId]) voteAccum[v.outfitId] = { total: 0, count: 0 };
+      voteAccum[v.outfitId].total += v.rating;
+      voteAccum[v.outfitId].count += 1;
+    }
+
+    const history = completedGames.map(game => {
+      const outfits = outfitsByGame[game.gameId] || [];
+      const scored = outfits.map(o => {
+        const { total = 0, count = 0 } = voteAccum[o.outfitId] || {};
+        return {
+          username: o.username || 'Unknown',
+          score: count > 0 ? total / count : 0,
+          totalVotes: count,
+          products: o.products || [],
+        };
+      });
+      scored.sort((a, b) => b.score - a.score);
+      const winner = scored[0] || null;
+
+      return {
+        gameId: game.gameId,
+        themeName: game.themeName || game.theme || 'Unknown Theme',
+        createdAt: game.createdAt,
+        playerCount: game.playerIds?.length || 0,
+        winner: winner ? {
+          username: winner.username,
+          score: parseFloat(winner.score.toFixed(1)),
+          totalVotes: winner.totalVotes,
+          previewImage: winner.products[0]?.imageUrl || null,
+        } : null,
+      };
+    });
+
+    res.json({ history });
+  } catch (err) {
+    console.error('History error:', err.message);
+    res.status(500).json({ error: 'Failed to load history' });
+  }
+});
+
+// GET /api/popular-products — public, most picked products across all completed games
+app.get('/api/popular-products', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 12, 30);
+    const allOutfits = await db.scanAllOutfits();
+
+    const productMap = new Map();
+    for (const outfit of allOutfits) {
+      if (!Array.isArray(outfit.products)) continue;
+      for (const p of outfit.products) {
+        const id = p.id || p.productSin || p.asin;
+        if (!id || !p.imageUrl) continue;
+        if (!productMap.has(id)) {
+          productMap.set(id, {
+            id,
+            name: p.name || p.productName || '',
+            brand: p.brand || p.designerName || '',
+            category: p.category || 'unknown',
+            price: p.price ?? p.retailPrice ?? null,
+            imageUrl: p.imageUrl || p.image || null,
+            productUrl: p.productUrl || null,
+            pickCount: 0,
+          });
+        }
+        productMap.get(id).pickCount += 1;
+      }
+    }
+
+    const products = Array.from(productMap.values())
+      .sort((a, b) => b.pickCount - a.pickCount)
+      .slice(0, limit);
+
+    res.json({ products });
+  } catch (err) {
+    console.error('Popular products error:', err.message);
+    res.status(500).json({ error: 'Failed to load popular products' });
   }
 });
 
@@ -413,19 +601,25 @@ app.post('/api/games/:gameId/join', async (req, res) => {
     const game = await db.getGame(req.params.gameId);
     if (!game) return res.status(404).json({ error: 'Game not found' });
     if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game has already started' });
-    if (game.playerIds.length >= game.maxPlayers) return res.status(400).json({ error: 'Game is full' });
 
-    const { username } = req.body;
+    const { username, isAudience } = req.body;
+
+    // Audience doesn't count toward maxPlayers; contestants do
+    if (!isAudience && game.playerIds.length >= game.maxPlayers) {
+      return res.status(400).json({ error: 'Game is full' });
+    }
     if (!username) return res.status(400).json({ error: 'username is required' });
 
     const playerId = generateId();
+    const audience = Boolean(isAudience);
     const player = {
       playerId,
       username,
       isHost: false,
-      isReady: false,
-      hasSubmitted: false,
+      isReady: audience, // audience auto-ready
+      hasSubmitted: audience, // audience don't need to submit outfits
       hasVoted: false,
+      isAudience: audience,
       gameId: game.gameId,
       outfitId: null,
     };
@@ -479,22 +673,103 @@ app.post('/api/games/:gameId/start', async (req, res) => {
     if (!game) return res.status(404).json({ error: 'Game not found' });
     if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game already started' });
 
-    const now = new Date();
-    const updatedGame = await db.updateGameStatus(game.gameId, 'PLAYING', {
-      startedAt: now.toISOString(),
-      endsAt: new Date(now.getTime() + game.timeLimit * 1000).toISOString(),
+    // Solo mode or host-pick mode: skip theme voting, go straight to PLAYING
+    if (game.singlePlayer || game.themeMode === 'pick') {
+      const now = new Date();
+      const updatedGame = await db.updateGameStatus(game.gameId, 'PLAYING', {
+        startedAt: now.toISOString(),
+        endsAt: new Date(now.getTime() + game.timeLimit * 1000).toISOString(),
+      });
+      console.log(`Game ${game.gameId} started (${game.singlePlayer ? 'solo' : 'host-pick'} mode)`);
+      if (io) io.to(game.gameId).emit('game-started', { gameId: game.gameId, startedAt: updatedGame.startedAt, endsAt: updatedGame.endsAt, timeLimit: game.timeLimit });
+      return res.json({ success: true, game: updatedGame });
+    }
+
+    // Vote mode: enter THEME_VOTING phase
+    const themeOptions = pickRandomThemes(3);
+    const THEME_VOTE_DURATION = 15; // seconds
+
+    const updatedGame = await db.updateGameStatus(game.gameId, 'THEME_VOTING', {
+      themeVoteEndsAt: new Date(Date.now() + THEME_VOTE_DURATION * 1000).toISOString(),
     });
 
-    console.log(`Game ${game.gameId} started`);
+    // Set up in-memory vote tracking
+    themeVoteCache.set(game.gameId, {
+      options: themeOptions,
+      votes: {},
+      totalPlayers: game.playerIds.length,
+      finalized: false,
+      timer: setTimeout(() => finalizeThemeVoting(game.gameId), THEME_VOTE_DURATION * 1000),
+    });
 
-    // Notify all clients in the room
-    if (io) io.to(game.gameId).emit('game-started', { gameId: game.gameId, startedAt: updatedGame.startedAt, endsAt: updatedGame.endsAt, timeLimit: game.timeLimit });
+    console.log(`Game ${game.gameId} entered THEME_VOTING phase`);
 
-    res.json({ success: true, game: updatedGame });
+    if (io) {
+      io.to(game.gameId).emit('theme-vote-start', {
+        options: themeOptions,
+        endsAt: updatedGame.themeVoteEndsAt,
+        duration: THEME_VOTE_DURATION,
+      });
+    }
+
+    res.json({ success: true, game: updatedGame, themeOptions });
   } catch (err) {
     console.error('Start game error:', err.message);
     res.status(500).json({ error: 'Failed to start game' });
   }
+});
+
+// POST /api/games/:gameId/theme-vote — vote on a theme
+app.post('/api/games/:gameId/theme-vote', async (req, res) => {
+  try {
+    const { playerId, themeId } = req.body;
+    const gameId = req.params.gameId;
+
+    if (!playerId || !themeId) return res.status(400).json({ error: 'playerId and themeId are required' });
+
+    const cache = themeVoteCache.get(gameId);
+    if (!cache) return res.status(400).json({ error: 'No active theme vote for this game' });
+    if (cache.finalized) return res.status(400).json({ error: 'Theme voting has ended' });
+
+    // Validate theme is one of the options
+    if (!cache.options.find(t => t.id === themeId)) {
+      return res.status(400).json({ error: 'Invalid theme option' });
+    }
+
+    cache.votes[playerId] = themeId;
+
+    const voteCount = Object.keys(cache.votes).length;
+    console.log(`Theme vote: ${playerId} voted for ${themeId} (${voteCount}/${cache.totalPlayers})`);
+
+    // Broadcast vote update
+    if (io) {
+      io.to(gameId).emit('theme-vote-update', {
+        voteCount,
+        totalPlayers: cache.totalPlayers,
+      });
+    }
+
+    // If all players voted, finalize early
+    if (voteCount >= cache.totalPlayers) {
+      await finalizeThemeVoting(gameId);
+    }
+
+    res.json({ success: true, voteCount, totalPlayers: cache.totalPlayers });
+  } catch (err) {
+    console.error('Theme vote error:', err.message);
+    res.status(500).json({ error: 'Failed to submit theme vote' });
+  }
+});
+
+// GET /api/games/:gameId/theme-vote — get current theme vote state
+app.get('/api/games/:gameId/theme-vote', (req, res) => {
+  const cache = themeVoteCache.get(req.params.gameId);
+  if (!cache) return res.status(404).json({ error: 'No active theme vote' });
+  res.json({
+    options: cache.options,
+    voteCount: Object.keys(cache.votes).length,
+    totalPlayers: cache.totalPlayers,
+  });
 });
 
 // GET /api/games/:gameId/players — list players
@@ -532,9 +807,10 @@ app.post('/api/outfits', async (req, res) => {
       await db.updateOutfit(player.outfitId, {
         products: outfitProducts || [],
         totalPrice: totalPrice || 0,
-        tryOnImage: tryOnImage || null,
         submittedAt,
       });
+      // Cache tryOnImage in memory (too large for DynamoDB)
+      if (tryOnImage) tryOnImageCache.set(player.outfitId, tryOnImage);
       console.log(`Outfit ${player.outfitId} re-submitted by player ${playerId}`);
       return res.status(200).json({ outfitId: player.outfitId, submittedAt });
     }
@@ -546,33 +822,46 @@ app.post('/api/outfits', async (req, res) => {
       playerId,
       products: outfitProducts || [],
       totalPrice: totalPrice || 0,
-      tryOnImage: tryOnImage || null,
       submittedAt: new Date().toISOString(),
     };
+
+    // Cache tryOnImage in memory (too large for DynamoDB)
+    if (tryOnImage) tryOnImageCache.set(outfitId, tryOnImage);
 
     await Promise.all([
       db.createOutfit(outfit),
       db.updatePlayer(playerId, { hasSubmitted: true, outfitId }),
     ]);
 
-    // Auto-advance when all players have submitted
+    console.log(`Outfit ${outfitId} submitted by player ${playerId}`);
+
+    // Count submissions reliably: re-fetch all players with a small delay
+    // to handle DynamoDB GSI eventual consistency
+    await new Promise(r => setTimeout(r, 500));
     const gamePlayers = await db.getPlayersByGameId(gameId);
-    if (gamePlayers.every(p => p.hasSubmitted)) {
+    // Only count non-audience players for submission tracking
+    const contestants = gamePlayers.filter(p => !p.isAudience);
+    const submittedCount = contestants.filter(p => p.hasSubmitted).length;
+    const totalPlayers = contestants.length;
+
+    console.log(`Submissions: ${submittedCount}/${totalPlayers}`);
+
+    // Auto-advance when all players have submitted
+    let newStatus = game.status;
+    if (submittedCount >= totalPlayers) {
       if (game.singlePlayer) {
         await db.updateGameStatus(gameId, 'COMPLETED', { endedAt: new Date().toISOString() });
+        newStatus = 'COMPLETED';
         console.log(`Solo game ${gameId} completed (skipping voting)`);
       } else {
         await db.updateGameStatus(gameId, 'VOTING');
+        newStatus = 'VOTING';
         console.log(`Game ${gameId} moved to VOTING phase`);
       }
     }
 
-    console.log(`Outfit ${outfitId} submitted by player ${playerId}`);
-
     // Notify all clients in the room
-    const updatedGame = await db.getGame(gameId);
-    const submittedCount = gamePlayers.filter(p => p.hasSubmitted).length;
-    if (io) io.to(gameId).emit('outfit-submitted', { submittedCount, totalPlayers: gamePlayers.length, gameStatus: updatedGame.status });
+    if (io) io.to(gameId).emit('outfit-submitted', { submittedCount, totalPlayers, gameStatus: newStatus });
 
     res.status(201).json({ outfitId, submittedAt: outfit.submittedAt });
   } catch (err) {
@@ -592,12 +881,13 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
     const gameOutfits = [];
     for (const outfit of rawOutfits) {
       if (game.status === 'VOTING') {
-        // Anonymized — no player info
+        // Include playerId so frontend can filter own outfit, but no player name
         gameOutfits.push({
           outfitId: outfit.outfitId,
+          playerId: outfit.playerId,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
-          tryOnImage: outfit.tryOnImage || null,
+          tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
         });
       } else {
         // Include player info for completed games
@@ -608,7 +898,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           playerName: player?.username,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
-          tryOnImage: outfit.tryOnImage || null,
+          tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
         });
       }
     }
@@ -627,7 +917,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
 // POST /api/votes — submit votes
 app.post('/api/votes', async (req, res) => {
   try {
-    const { gameId, playerId, ratings } = req.body;
+    const { gameId, playerId, ratings, rankings } = req.body;
 
     const game = await db.getGame(gameId);
     if (!game) return res.status(404).json({ error: 'Game not found' });
@@ -635,12 +925,38 @@ app.post('/api/votes', async (req, res) => {
     const player = await db.getPlayer(playerId);
     if (!player || player.gameId !== gameId) return res.status(404).json({ error: 'Player not found in this game' });
     if (player.hasVoted) return res.status(400).json({ error: 'Already voted' });
-    if (!Array.isArray(ratings) || ratings.length === 0) return res.status(400).json({ error: 'ratings array is required' });
 
-    // Write all votes and update player in parallel
-    const voteWrites = ratings.map(({ outfitId, rating }) =>
-      db.createVote({ voteId: generateId(), gameId, voterId: playerId, outfitId, rating: Number(rating) })
-    );
+    // Prevent voting on own outfit
+    const playerOutfits = await db.getOutfitsByGameId(gameId);
+    const ownOutfitIds = new Set(playerOutfits.filter(o => o.playerId === playerId).map(o => o.outfitId));
+
+    let voteWrites;
+
+    if (game.votingMode === 'ranking') {
+      // Ranking mode: rankings is an ordered array of outfitIds (best first)
+      if (!Array.isArray(rankings) || rankings.length === 0) {
+        return res.status(400).json({ error: 'rankings array is required for ranking mode' });
+      }
+      const selfVote = rankings.find(id => ownOutfitIds.has(id));
+      if (selfVote) return res.status(400).json({ error: 'Cannot include your own outfit in rankings' });
+
+      // Store each rank position: rank 1 = best, rank N = worst
+      voteWrites = rankings.map((outfitId, index) =>
+        db.createVote({ voteId: generateId(), gameId, voterId: playerId, outfitId, rating: index + 1 })
+      );
+    } else {
+      // Star mode: ratings is [{ outfitId, rating }]
+      if (!Array.isArray(ratings) || ratings.length === 0) {
+        return res.status(400).json({ error: 'ratings array is required' });
+      }
+      const selfVote = ratings.find(r => ownOutfitIds.has(r.outfitId));
+      if (selfVote) return res.status(400).json({ error: 'Cannot vote on your own outfit' });
+
+      voteWrites = ratings.map(({ outfitId, rating }) =>
+        db.createVote({ voteId: generateId(), gameId, voterId: playerId, outfitId, rating: Number(rating) })
+      );
+    }
+
     await Promise.all([
       ...voteWrites,
       db.updatePlayer(playerId, { hasVoted: true }),
@@ -679,32 +995,70 @@ app.get('/api/games/:gameId/results', async (req, res) => {
       db.getPlayersByGameId(req.params.gameId),
     ]);
 
-    // Aggregate vote scores per outfit
-    const scoreMap = new Map();
-    for (const vote of gameVotes) {
-      const entry = scoreMap.get(vote.outfitId) || { total: 0, count: 0 };
-      entry.total += vote.rating;
-      entry.count += 1;
-      scoreMap.set(vote.outfitId, entry);
-    }
-
     // Build a player lookup map from the already-fetched players
     const playerMap = new Map(gamePlayers.map(p => [p.playerId, p]));
+
+    // Aggregate vote scores per outfit
+    const scoreMap = new Map();
+
+    if (game.votingMode === 'ranking') {
+      // Ranking mode: use Borda count
+      // Each vote.rating is the rank position (1=best, N=worst)
+      // Borda points: N - rank + 1 (best gets N points, worst gets 1)
+      const totalOutfits = gameOutfits.filter(o => {
+        // Count outfits that were rankable (not the voter's own)
+        return true; // all outfits count for N
+      }).length;
+      // N = number of outfits being ranked per voter (total outfits minus voter's own)
+      // But since each voter ranks a different number, derive N from the vote itself
+      for (const vote of gameVotes) {
+        const entry = scoreMap.get(vote.outfitId) || { total: 0, count: 0 };
+        // Count how many outfits this voter ranked (to compute N per voter)
+        const voterVotes = gameVotes.filter(v => v.voterId === vote.voterId);
+        const n = voterVotes.length;
+        const bordaPoints = n - vote.rating + 1; // rank 1 → N points, rank N → 1 point
+        entry.total += bordaPoints;
+        entry.count += 1;
+        scoreMap.set(vote.outfitId, entry);
+      }
+    } else {
+      // Star mode: existing average rating logic
+      for (const vote of gameVotes) {
+        const entry = scoreMap.get(vote.outfitId) || { total: 0, count: 0 };
+        entry.total += vote.rating;
+        entry.count += 1;
+        scoreMap.set(vote.outfitId, entry);
+      }
+    }
 
     // Build ranked results
     const results = gameOutfits.map(outfit => {
       const player = playerMap.get(outfit.playerId);
       const { total = 0, count = 0 } = scoreMap.get(outfit.outfitId) || {};
-      const score = count > 0 ? total / count : 0;
+
+      let score;
+      if (game.votingMode === 'ranking') {
+        // Normalize Borda points to 0-5 scale
+        // Max possible Borda points per vote = N (number of ranked outfits per voter)
+        // Average Borda = total / count, then normalize: (avg / N) * 5
+        const avgBorda = count > 0 ? total / count : 0;
+        // Estimate N from the first voter's count
+        const sampleVoter = gameVotes.find(v => v.voterId);
+        const n = sampleVoter ? gameVotes.filter(v => v.voterId === sampleVoter.voterId).length : 1;
+        score = count > 0 ? parseFloat(((avgBorda / n) * 5).toFixed(1)) : 0;
+      } else {
+        score = count > 0 ? parseFloat((total / count).toFixed(1)) : 0;
+      }
+
       return {
         outfitId: outfit.outfitId,
         playerId: outfit.playerId,
         username: player?.username || 'Unknown',
-        score: parseFloat(score.toFixed(1)),
+        score,
         totalVotes: count,
         products: outfit.products,
         totalPrice: outfit.totalPrice,
-        tryOnImage: outfit.tryOnImage || null,
+        tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
       };
     });
 
