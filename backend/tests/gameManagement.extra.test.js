@@ -84,6 +84,7 @@ describe('Game management API extra coverage', () => {
       gameId: 'ABC123',
       status: 'LOBBY',
       timeLimit: 300,
+      singlePlayer: true,
     });
     db.updateGameStatus.mockResolvedValue({
       gameId: 'ABC123',
