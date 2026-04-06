@@ -1362,8 +1362,6 @@ CRITICAL REQUIREMENTS:
   throw new Error('No image in response');
 }
 
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
 // POST /api/tryon/generate — generate 3 try-on images
 app.post('/api/tryon/generate', async (req, res) => {
   if (!GEMINI_API_KEY) return res.status(500).json({ error: 'API key not configured' });
@@ -1386,24 +1384,20 @@ app.post('/api/tryon/generate', async (req, res) => {
       }
     }
 
-    // Generate images sequentially with delay to avoid rate limiting
-    const images = [];
-    const errors = [];
-
-    for (let i = 0; i < imageCount; i++) {
-      try {
-        console.log(`Generating image ${i + 1} of ${imageCount}...`);
-        const result = await generateSingleImage(products, productImages, i, parsedUserPhoto);
-        images.push(result);
-        if (i < imageCount - 1) {
-          console.log('Waiting 2s before next request...');
-          await delay(2000);
-        }
-      } catch (err) {
-        console.error(`Error generating image ${i + 1}:`, err.message);
-        errors.push(err.message);
-      }
-    }
+    // Generate images in parallel — each call is independent
+    console.log(`Generating ${imageCount} images in parallel...`);
+    const results = await Promise.all(
+      Array.from({ length: imageCount }, (_, i) =>
+        generateSingleImage(products, productImages, i, parsedUserPhoto)
+          .then(result => ({ success: true, result }))
+          .catch(err => {
+            console.error(`Error generating image ${i + 1}:`, err.message);
+            return { success: false, error: err.message };
+          })
+      )
+    );
+    const images = results.filter(r => r.success).map(r => r.result);
+    const errors = results.filter(r => !r.success).map(r => r.error);
 
     if (images.length === 0) return res.status(500).json({ error: errors[0] || 'Failed to generate any images' });
     console.log(`Generated ${images.length}/${imageCount} images`);
