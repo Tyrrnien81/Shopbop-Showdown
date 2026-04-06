@@ -7,7 +7,8 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "db:create-tables": "node scripts/createTables.js",
-    "test": "jest"
+    "test": "jest",
+    "deploy:lambda": "node scripts/deployLambda.js"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1007.0",
