@@ -1267,6 +1267,8 @@ User: ${message}`;
 // ============================================================
 
 // Helper function to generate a single image
+// NOTE: This function is duplicated in lambda/tryon-generate/index.js for Lambda deployment.
+// If you modify this function, update the Lambda version too.
 async function generateSingleImage(products, productImages, variation = 0, userPhoto = null) {
   const variationPrompts = [
     'standing in a confident pose',
