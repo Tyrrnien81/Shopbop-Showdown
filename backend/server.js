@@ -7,6 +7,14 @@ const { Server } = require('socket.io');
 const db = require('./db');
 const analyticsRouter = require('./routes/analytics');
 
+// Lambda SDK — loaded only when Lambda mode is active
+const TRYON_LAMBDA_NAME = process.env.TRYON_LAMBDA_NAME;
+let LambdaClient, InvokeCommand, lambdaClient;
+if (TRYON_LAMBDA_NAME) {
+  ({ LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda'));
+  lambdaClient = new LambdaClient({ region: process.env.AWS_REGION || 'us-east-1' });
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -1364,9 +1372,41 @@ CRITICAL REQUIREMENTS:
   throw new Error('No image in response');
 }
 
+// Invoke the Lambda function for a single try-on image
+async function invokeTryonLambda(products, productImages, variation, userPhoto) {
+  const payload = { products, productImages, variation, userPhoto };
+  const payloadStr = JSON.stringify(payload);
+
+  // Lambda sync invoke limit: 6MB request
+  if (Buffer.byteLength(payloadStr) > 5.5 * 1024 * 1024) {
+    throw new Error('Payload too large for Lambda');
+  }
+
+  const command = new InvokeCommand({
+    FunctionName: TRYON_LAMBDA_NAME,
+    InvocationType: 'RequestResponse',
+    Payload: payloadStr,
+  });
+
+  const response = await lambdaClient.send(command);
+
+  // Lambda-level error (timeout, out of memory, crash)
+  if (response.FunctionError) {
+    const errorPayload = Buffer.from(response.Payload).toString();
+    throw new Error(`Lambda ${response.FunctionError}: ${errorPayload.slice(0, 200)}`);
+  }
+
+  const result = JSON.parse(Buffer.from(response.Payload).toString());
+  if (result.statusCode !== 200) throw new Error(result.error || 'Lambda execution failed');
+  return { imageData: result.imageData, mimeType: result.mimeType };
+}
+
 // POST /api/tryon/generate — generate 3 try-on images
 app.post('/api/tryon/generate', async (req, res) => {
-  if (!GEMINI_API_KEY) return res.status(500).json({ error: 'API key not configured' });
+  // Block only if neither local key nor Lambda is available
+  if (!GEMINI_API_KEY && !TRYON_LAMBDA_NAME) {
+    return res.status(500).json({ error: 'API key not configured' });
+  }
 
   try {
     const { products, productImages, count = 3, userPhoto } = req.body;
@@ -1386,20 +1426,41 @@ app.post('/api/tryon/generate', async (req, res) => {
       }
     }
 
-    // Generate images in parallel — each call is independent
-    console.log(`Generating ${imageCount} images in parallel...`);
+    // Dispatch: Lambda if configured, otherwise local
+    const useLambda = !!TRYON_LAMBDA_NAME;
+    const generateFn = useLambda
+      ? (variation) => invokeTryonLambda(products, productImages, variation, parsedUserPhoto)
+      : (variation) => generateSingleImage(products, productImages, variation, parsedUserPhoto);
+
+    console.log(`Generating ${imageCount} images in parallel (${useLambda ? 'Lambda' : 'local'})...`);
+
     const results = await Promise.all(
       Array.from({ length: imageCount }, (_, i) =>
-        generateSingleImage(products, productImages, i, parsedUserPhoto)
-          .then(result => ({ success: true, result }))
+        generateFn(i)
+          .then(result => ({ success: true, result, index: i }))
           .catch(err => {
             console.error(`Error generating image ${i + 1}:`, err.message);
-            return { success: false, error: err.message };
+            return { success: false, error: err.message, index: i };
           })
       )
     );
-    const images = results.filter(r => r.success).map(r => r.result);
+
+    let images = results.filter(r => r.success).map(r => r.result);
     const errors = results.filter(r => !r.success).map(r => r.error);
+
+    // Retry failed Lambda calls locally (only if Express has GEMINI_API_KEY)
+    if (useLambda && errors.length > 0 && images.length < imageCount && GEMINI_API_KEY) {
+      const failedIndices = results.filter(r => !r.success).map(r => r.index);
+      console.log(`${failedIndices.length} Lambda failure(s) — retrying locally...`);
+      const retryResults = await Promise.all(
+        failedIndices.map(i =>
+          generateSingleImage(products, productImages, i, parsedUserPhoto)
+            .then(result => ({ success: true, result }))
+            .catch(err => ({ success: false, error: err.message }))
+        )
+      );
+      images.push(...retryResults.filter(r => r.success).map(r => r.result));
+    }
 
     if (images.length === 0) return res.status(500).json({ error: errors[0] || 'Failed to generate any images' });
     console.log(`Generated ${images.length}/${imageCount} images`);
@@ -1413,7 +1474,9 @@ app.post('/api/tryon/generate', async (req, res) => {
 
 // POST /api/tryon/generate-single — regenerate one image
 app.post('/api/tryon/generate-single', async (req, res) => {
-  if (!GEMINI_API_KEY) return res.status(500).json({ error: 'API key not configured' });
+  if (!GEMINI_API_KEY && !TRYON_LAMBDA_NAME) {
+    return res.status(500).json({ error: 'API key not configured' });
+  }
 
   try {
     const { products, productImages, variation = 0, userPhoto } = req.body;
@@ -1528,6 +1591,7 @@ if (require.main === module) {
   server.listen(PORT, () => {
     console.log(`Backend server running on http://localhost:${PORT}`);
     if (!GEMINI_API_KEY) console.warn('WARNING: GEMINI_API_KEY not set');
+    if (TRYON_LAMBDA_NAME) console.log(`Lambda try-on enabled: ${TRYON_LAMBDA_NAME}`);
     if (!process.env.SHOPBOP_API_KEY) console.warn('WARNING: SHOPBOP_API_KEY not set — using client-id only');
     console.log(`ShopBop client-id: ${SHOPBOP_CLIENT_ID}`);
   });
