@@ -1,0 +1,7 @@
+{
+  "name": "shopbop-tryon-generate",
+  "version": "1.0.0",
+  "description": "Lambda function for AI try-on image generation via Gemini API",
+  "main": "index.js",
+  "license": "MIT"
+}
