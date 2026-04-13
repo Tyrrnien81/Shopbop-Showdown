@@ -93,6 +93,9 @@ function Game() {
   // Waiting room state
   const [hasSubmitted, setHasSubmitted] = useState(false);
 
+  // Mobile bottom tray state
+  const [mobileTrayOpen, setMobileTrayOpen] = useState(false);
+
   // Chat assistant state
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([
@@ -1362,6 +1365,86 @@ function Game() {
           </div>
         </div>
       )}
+
+      {/* Mobile Bottom Tray — always visible on small screens */}
+      <div className={`mobile-outfit-tray${mobileTrayOpen ? ' expanded' : ''}`}>
+        {/* Collapsed tray bar */}
+        <button className="mobile-tray-bar" onClick={() => setMobileTrayOpen(!mobileTrayOpen)}>
+          <div className="mobile-tray-summary">
+            <div className="mobile-tray-thumbs">
+              {currentOutfit.products.slice(0, 5).map((p) => (
+                <img key={p.productSin} src={p.imageUrl} alt={p.name} referrerPolicy="no-referrer" />
+              ))}
+              {currentOutfit.products.length === 0 && (
+                <span className="mobile-tray-empty-label">No items yet</span>
+              )}
+            </div>
+            <div className="mobile-tray-meta">
+              <span className="mobile-tray-count">{currentOutfit.products.length} item{currentOutfit.products.length !== 1 ? 's' : ''}</span>
+              <span className="mobile-tray-budget">${currentOutfit.totalPrice.toLocaleString()}</span>
+            </div>
+          </div>
+          <svg className={`mobile-tray-chevron${mobileTrayOpen ? ' open' : ''}`} width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="18 15 12 9 6 15"/>
+          </svg>
+        </button>
+
+        {/* Expanded tray content */}
+        {mobileTrayOpen && (
+          <div className="mobile-tray-content">
+            <div className="mobile-tray-items">
+              {currentOutfit.products.map((product) => (
+                <div key={product.productSin} className="mobile-tray-item">
+                  <img src={product.imageUrl} alt={product.name} referrerPolicy="no-referrer" />
+                  <span className="mobile-tray-item-cat">{product.category}</span>
+                  <button
+                    className="mobile-tray-item-remove"
+                    onClick={() => handleProductClick(product)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {currentOutfit.products.length === 0 && (
+                <div className="mobile-tray-empty">
+                  <p>Browse products below and tap to add them to your board</p>
+                </div>
+              )}
+            </div>
+            {!isOutfitComplete && validationErrors.length > 0 && (
+              <div className="outfit-needs" style={{ padding: '0 16px', marginBottom: 8 }}>
+                <span className="outfit-needs-label">Need:</span>
+                {validationErrors.map((err, i) => (
+                  <span key={i} className="outfit-needs-tag">{err.replace('Missing: ', '')}</span>
+                ))}
+              </div>
+            )}
+            <div className="mobile-tray-actions">
+              <button
+                onClick={handleOpenModal}
+                className="btn btn-secondary btn-small"
+                disabled={currentOutfit.products.length === 0}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                  <circle cx="12" cy="7" r="4"/>
+                </svg>
+                Try On
+              </button>
+              <button
+                onClick={handleSubmitOutfit}
+                className={`btn btn-primary btn-small${isOutfitComplete ? ' ready' : ''}`}
+                disabled={!isOutfitComplete}
+              >
+                {isOutfitComplete ? 'Submit Look' : 'Complete Outfit'}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M5 12h14M12 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Popup notification */}
       {popupMessage && (

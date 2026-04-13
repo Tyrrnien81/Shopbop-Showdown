@@ -957,9 +957,11 @@ input::placeholder {
    ============================================ */
 .game-container {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg-cream);
+  overflow: hidden;
 }
 
 .game-header {
@@ -4519,6 +4521,228 @@ input::placeholder {
 }
 
 /* ============================================
+   MOBILE OUTFIT TRAY
+   ============================================ */
+.mobile-outfit-tray {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-outfit-tray {
+    display: block;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 800;
+    background: var(--bg-dark);
+    color: white;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.25);
+    transition: max-height 0.3s ease;
+  }
+
+  .mobile-outfit-tray.expanded {
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+
+  /* Hide the desktop outfit panel on mobile since we have the tray */
+  .outfit-panel {
+    display: none;
+  }
+
+  /* Add bottom padding to products panel so content isn't hidden behind tray */
+  .products-panel {
+    padding-bottom: 80px !important;
+  }
+
+  .mobile-tray-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 12px 16px;
+    background: none;
+    border: none;
+    color: white;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-tray-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .mobile-tray-thumbs {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .mobile-tray-thumbs img {
+    width: 36px;
+    height: 36px;
+    border-radius: 6px;
+    object-fit: cover;
+    border: 1.5px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .mobile-tray-empty-label {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  .mobile-tray-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  .mobile-tray-count {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgba(255, 255, 255, 0.6);
+  }
+
+  .mobile-tray-budget {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--primary-orange);
+  }
+
+  .mobile-tray-chevron {
+    flex-shrink: 0;
+    color: rgba(255, 255, 255, 0.5);
+    transition: transform 0.3s ease;
+    margin-left: 8px;
+  }
+
+  .mobile-tray-chevron.open {
+    transform: rotate(180deg);
+  }
+
+  /* Expanded content */
+  .mobile-tray-content {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 12px 0 16px;
+  }
+
+  .mobile-tray-items {
+    display: flex;
+    gap: 10px;
+    padding: 0 16px 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .mobile-tray-items::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-tray-item {
+    position: relative;
+    flex-shrink: 0;
+    width: 72px;
+  }
+
+  .mobile-tray-item img {
+    width: 72px;
+    height: 96px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  .mobile-tray-item-cat {
+    display: block;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 4px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .mobile-tray-item-remove {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .mobile-tray-empty {
+    padding: 16px;
+    text-align: center;
+  }
+
+  .mobile-tray-empty p {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.4);
+    margin: 0;
+  }
+
+  .mobile-tray-actions {
+    display: flex;
+    gap: 8px;
+    padding: 0 16px;
+  }
+
+  .mobile-tray-actions .btn {
+    flex: 1;
+    font-size: 0.75rem;
+    padding: 10px 12px;
+  }
+
+  .mobile-tray-actions .btn-secondary {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: white;
+  }
+
+  .mobile-tray-actions .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.15);
+  }
+
+  .mobile-tray-actions .btn-secondary:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  /* Move chat bubble above the tray */
+  .chat-bubble {
+    bottom: 72px;
+  }
+
+  .chat-panel {
+    bottom: 72px;
+  }
+}
+
+/* ============================================
    RESPONSIVE
    ============================================ */
 @media (max-width: 1024px) {
@@ -4547,12 +4771,15 @@ input::placeholder {
 }
 
 @media (max-width: 768px) {
+  /* Home */
   .home-title h1 {
     font-size: 3rem;
   }
 
   .home-actions {
     flex-direction: column;
+    width: 100%;
+    max-width: 320px;
   }
 
   .home-actions .btn {
@@ -4562,6 +4789,15 @@ input::placeholder {
   .carousel-card {
     width: 120px;
     height: 160px;
+  }
+
+  /* Create Game */
+  .create-game-container {
+    padding: 24px 16px;
+  }
+
+  .create-game-main {
+    padding: 20px;
   }
 
   .create-game-header {
@@ -4578,37 +4814,458 @@ input::placeholder {
     grid-template-columns: 1fr;
   }
 
+  .time-limit-options {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .theme-mode-options {
+    flex-direction: column;
+  }
+
+  /* Game Page */
+  .game-container {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: auto;
+  }
+
+  .game-header {
+    padding: 12px 16px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .game-brand-title {
+    font-size: 0.9rem;
+  }
+
+  .game-wallet-value {
+    font-size: 1.1rem;
+  }
+
+  .game-timer-value {
+    font-size: 1.1rem;
+  }
+
   .game-content {
     flex-direction: column;
   }
 
-  .outfit-panel {
-    width: 100%;
-    max-height: 40vh;
+  .products-panel {
+    padding: 16px;
   }
 
   .products-grid {
     grid-template-columns: repeat(3, 1fr);
   }
 
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-group {
+    width: 100%;
+  }
+
+  .filter-select {
+    width: 100%;
+  }
+
+  .color-swatches {
+    justify-content: flex-start;
+  }
+
+  /* Lobby */
+  .lobby-container {
+    padding: 24px 16px;
+  }
+
+  .lobby-header {
+    margin-bottom: 24px;
+  }
+
+  .lobby-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .game-code-display span {
+    font-size: 1.2rem;
+  }
+
+  .game-info-cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .info-card {
+    padding: 16px 12px;
+  }
+
+  .lobby-actions {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .lobby-actions .btn {
+    width: 100%;
+    max-width: 320px;
+  }
+
+  /* Voting */
+  .voting-container {
+    padding: 24px 16px;
+  }
+
+  .voting-header {
+    margin-bottom: 24px;
+  }
+
+  .voting-header h1 {
+    font-size: 1.75rem;
+  }
+
+  .voting-player-name {
+    font-size: 1.2rem;
+  }
+
+  .voting-look-layout.has-model {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .voting-look-layout.has-model .voting-main-image {
+    max-width: 100%;
+  }
+
+  .voting-side-items {
+    width: 100%;
+  }
+
   .voting-outfit-grid {
     gap: 8px;
+  }
+
+  .star-rating-star {
+    font-size: 2rem;
+  }
+
+  /* Results */
+  .results-container {
+    padding: 24px 16px;
+  }
+
+  .results-header {
+    margin-bottom: 24px;
+  }
+
+  .results-header h1 {
+    font-size: 1.75rem;
+  }
+
+  .winner-podium {
+    gap: 8px;
+    padding: 0 8px;
+    flex-wrap: wrap;
+    justify-content: center;
   }
 
   .podium-outfit {
     width: 120px !important;
   }
+
+  .podium-place.first .podium-outfit {
+    width: 160px !important;
+  }
+
+  .podium-player-name {
+    font-size: 0.85rem;
+  }
+
+  .podium-bar {
+    height: 60px;
+  }
+
+  .podium-place.first .podium-bar {
+    height: 90px;
+  }
+
+  .podium-place.second .podium-bar {
+    height: 75px;
+  }
+
+  .podium-place.third .podium-bar {
+    height: 60px;
+  }
+
+  .reveal-drumroll-title {
+    font-size: 1.6rem;
+  }
+
+  /* Hall of Fame */
+  .hof-container {
+    padding: 24px 16px 60px;
+  }
+
+  .hof-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .hof-title {
+    font-size: 1.5rem;
+  }
+
+  .hof-tabs {
+    flex-direction: column;
+  }
+
+  .hof-products-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  /* Chat */
+  .chat-panel {
+    height: 70vh;
+    max-height: 500px;
+  }
+
+  /* Try-on Modal */
+  .tryon-modal-header {
+    padding: 16px;
+  }
+
+  .tryon-modal-header h2 {
+    font-size: 1.1rem;
+    padding-right: 32px;
+  }
+
+  .tryon-modal-content {
+    padding: 16px;
+  }
+
+  .tryon-modal-footer {
+    padding: 12px 16px;
+    flex-direction: column;
+  }
+
+  .tryon-modal-footer .btn {
+    width: 100%;
+  }
+
+  .tryon-modal-loading,
+  .tryon-modal-error,
+  .tryon-modal-empty {
+    min-height: 250px;
+  }
+
+  /* Ranking */
+  .rank-item-main {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .rank-outfit-preview {
+    width: 40px;
+    height: 40px;
+  }
+
+  .rank-outfit-name {
+    font-size: 0.85rem;
+  }
+
+  /* Popup */
+  .popup-box {
+    margin: 16px;
+    padding: 24px 20px;
+    max-width: calc(100vw - 32px);
+  }
 }
 
 @media (max-width: 480px) {
+  /* Home */
+  .home-title h1 {
+    font-size: 2.2rem;
+  }
+
+  .home-tagline {
+    font-size: 0.95rem;
+    margin-bottom: 32px;
+  }
+
+  /* Game */
   .game-header {
     flex-direction: column;
-    gap: 12px;
-    padding: 12px 16px;
+    gap: 8px;
+    padding: 10px 12px;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .game-brand {
+    justify-content: center;
+  }
+
+  .game-theme-display,
+  .game-wallet,
+  .game-timer-header {
+    text-align: center;
+    align-items: center;
+  }
+
+  .game-wallet {
+    flex-direction: row;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .game-timer-header {
+    flex-direction: row;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .submission-chip {
+    flex-direction: row;
+    gap: 8px;
   }
 
   .products-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .outfit-items-grid {
+    gap: 10px;
+  }
+
+  .outfit-panel-header {
+    padding: 16px;
+  }
+
+  .outfit-items {
+    padding: 16px;
+  }
+
+  .selected-items {
+    padding: 12px 16px;
+  }
+
+  .tryon-section {
+    padding: 16px;
+  }
+
+  /* Lobby */
+  .game-info-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .players-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Voting */
+  .voting-header h1 {
+    font-size: 1.4rem;
+  }
+
+  .voting-navigation {
+    gap: 16px;
+  }
+
+  .voting-nav-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  /* Results */
+  .results-header h1 {
+    font-size: 1.4rem;
+  }
+
+  .winner-podium {
+    gap: 6px;
+  }
+
+  .podium-outfit {
+    width: 90px !important;
+  }
+
+  .podium-place.first .podium-outfit {
+    width: 120px !important;
+  }
+
+  .podium-rank {
+    font-size: 1.5rem;
+  }
+
+  .podium-place.first .podium-rank {
+    font-size: 1.8rem;
+  }
+
+  .result-item {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .results-actions {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .results-actions .btn {
+    width: 100%;
+    max-width: 280px;
+  }
+
+  /* Chat */
+  .chat-bubble {
+    width: 48px;
+    height: 48px;
+    bottom: 16px;
+    left: 16px;
+  }
+
+  .chat-panel {
+    bottom: 8px;
+    left: 8px;
+    width: calc(100% - 16px);
+    height: 65vh;
+  }
+
+  /* Hall of Fame */
+  .hof-winner-img {
+    width: 48px;
+    height: 48px;
+  }
+
+  .hof-products-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  /* Theme Vote */
+  .theme-vote-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .theme-result-name {
+    font-size: 1.5rem;
+  }
+
+  .theme-result-icon {
+    font-size: 3.5rem;
+  }
+
+  /* Waiting Room */
+  .waiting-room-card {
+    padding: 28px 20px;
+  }
+
+  .waiting-room-timer {
+    font-size: 1.6rem;
   }
 }
 
