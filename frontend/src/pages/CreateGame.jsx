@@ -17,7 +17,7 @@ function CreateGame() {
   const { setGame, setCurrentPlayer, setLoading, setError, isLoading } = useGameStore();
 
   const [formData, setFormData] = useState({
-    hostUsername: 'You',
+    hostUsername: '',
     theme: 'runway',
     budget: 5000,
     maxPlayers: 4,
@@ -92,6 +92,21 @@ function CreateGame() {
         </div>
 
         <form onSubmit={handleSubmit}>
+          {/* Host Username */}
+          <div className="username-section">
+            <label className="username-label" htmlFor="hostUsername">Your Name</label>
+            <input
+              id="hostUsername"
+              type="text"
+              className="username-input"
+              placeholder="Enter your display name"
+              value={formData.hostUsername}
+              onChange={(e) => setFormData(prev => ({ ...prev, hostUsername: e.target.value }))}
+              maxLength={20}
+              required
+            />
+          </div>
+
           {/* Theme Mode Toggle (multiplayer only) */}
           {!formData.singlePlayer && (
             <div className="theme-mode-toggle">
@@ -284,14 +299,14 @@ function CreateGame() {
         <div className="member-item">
           <div className="member-avatar">
             <img
-              src="https://api.dicebear.com/7.x/avataaars/svg?seed=host"
-              alt="You"
+              src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.hostUsername || 'host'}`}
+              alt={formData.hostUsername || 'Host'}
               style={{ width: '100%', height: '100%' }}
             />
           </div>
           <div className="member-info">
             <div className="member-name">
-              You
+              {formData.hostUsername || 'You'}
               <span style={{ marginLeft: '6px', fontSize: '0.8rem' }}>👑</span>
             </div>
             <div className="member-status">Active</div>
