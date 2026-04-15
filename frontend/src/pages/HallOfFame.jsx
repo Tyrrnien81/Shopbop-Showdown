@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { historyApi } from '../services/api';
 
+const CATEGORY_FILTERS = ['All', 'Tops', 'Bottoms', 'Dresses', 'Shoes'];
+
 function HallOfFame() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -9,6 +11,8 @@ function HallOfFame() {
   const [gameHistory, setGameHistory] = useState([]);
   const [popularProducts, setPopularProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [themeFilter, setThemeFilter] = useState('All');
+  const [categoryFilter, setCategoryFilter] = useState('All');
 
   useEffect(() => {
     setLoading(true);
@@ -21,6 +25,22 @@ function HallOfFame() {
       setLoading(false);
     });
   }, []);
+
+  // Unique themes from game history
+  const allThemes = ['All', ...Array.from(new Set(gameHistory.map(e => e.themeName).filter(Boolean)))];
+
+  // Filtered winners
+  const filteredHistory = themeFilter === 'All'
+    ? gameHistory
+    : gameHistory.filter(e => e.themeName === themeFilter);
+
+  // Filtered products by category
+  const filteredProducts = categoryFilter === 'All'
+    ? popularProducts
+    : popularProducts.filter(p => {
+        const cat = (p.category || '').toLowerCase();
+        return cat === categoryFilter.toLowerCase();
+      });
 
   return (
     <div className="hof-container">
@@ -81,8 +101,28 @@ function HallOfFame() {
               </button>
             </div>
           ) : (
+            <>
+              {/* Theme filters */}
+              {allThemes.length > 2 && (
+                <div className="hof-filter-row">
+                  {allThemes.map(theme => (
+                    <button
+                      key={theme}
+                      className={`hof-filter-pill ${themeFilter === theme ? 'active' : ''}`}
+                      onClick={() => setThemeFilter(theme)}
+                    >
+                      {theme}
+                    </button>
+                  ))}
+                </div>
+              )}
             <div className="hof-winners-list">
-              {gameHistory.map((entry, i) => (
+              {filteredHistory.length === 0 ? (
+                <div className="hof-empty">
+                  <span className="hof-empty-icon">🏆</span>
+                  <p>No games with this theme yet.</p>
+                </div>
+              ) : filteredHistory.map((entry, i) => (
                 <div
                   key={entry.gameId}
                   className="hof-winner-card"
@@ -130,6 +170,7 @@ function HallOfFame() {
                 </div>
               ))}
             </div>
+            </>
           )
         ) : (
           popularProducts.length === 0 ? (
@@ -142,43 +183,65 @@ function HallOfFame() {
               </button>
             </div>
           ) : (
-            <div className="hof-products-grid">
-              {popularProducts.map((product, i) => (
-                <div key={product.id} className="hof-product-card">
-                  <div className="hof-product-img-wrap">
-                    <img
-                      src={product.imageUrl}
-                      alt={product.name}
-                      className="hof-product-img"
-                      referrerPolicy="no-referrer"
-                    />
-                    <span className="hof-product-rank">#{i + 1}</span>
-                    <span className="hof-product-badge">{product.pickCount}x picked</span>
-                  </div>
-                  <div className="hof-product-info">
-                    <span className="hof-product-name">{product.name}</span>
-                    {product.brand && <span className="hof-product-brand">{product.brand}</span>}
-                    {product.price != null && (
-                      <span className="hof-product-price">${product.price.toLocaleString()}</span>
-                    )}
-                  </div>
-                  {product.productUrl && (
-                    <a
-                      href={product.productUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hof-product-shop-btn"
-                      onClick={e => e.stopPropagation()}
-                    >
-                      Shop on Shopbop
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
-                      </svg>
-                    </a>
-                  )}
+            <>
+              {/* Category filters */}
+              <div className="hof-filter-row">
+                {CATEGORY_FILTERS.map(cat => (
+                  <button
+                    key={cat}
+                    className={`hof-filter-pill ${categoryFilter === cat ? 'active' : ''}`}
+                    onClick={() => setCategoryFilter(cat)}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+
+              {filteredProducts.length === 0 ? (
+                <div className="hof-empty">
+                  <span className="hof-empty-icon">👗</span>
+                  <p>No {categoryFilter.toLowerCase()} picked yet.</p>
                 </div>
-              ))}
-            </div>
+              ) : (
+                <div className="hof-products-grid">
+                  {filteredProducts.map((product, i) => (
+                    <div key={product.id} className="hof-product-card">
+                      <div className="hof-product-img-wrap">
+                        <img
+                          src={product.imageUrl}
+                          alt={product.name}
+                          className="hof-product-img"
+                          referrerPolicy="no-referrer"
+                        />
+                        <span className="hof-product-rank">#{i + 1}</span>
+                        <span className="hof-product-badge">{product.pickCount}x picked</span>
+                      </div>
+                      <div className="hof-product-info">
+                        <span className="hof-product-name">{product.name}</span>
+                        {product.brand && <span className="hof-product-brand">{product.brand}</span>}
+                        {product.price != null && (
+                          <span className="hof-product-price">${product.price.toLocaleString()}</span>
+                        )}
+                      </div>
+                      {product.productUrl && (
+                        <a
+                          href={product.productUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="hof-product-shop-btn"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          Shop on Shopbop
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
+                          </svg>
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )
         )}
       </div>
