@@ -5643,6 +5643,38 @@ input::placeholder {
   color: var(--primary-orange);
 }
 
+/* Filter pills */
+.hof-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.hof-filter-pill {
+  padding: 6px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.hof-filter-pill:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.hof-filter-pill.active {
+  background: var(--primary-orange);
+  border-color: var(--primary-orange);
+  color: #fff;
+}
+
 /* Products grid */
 .hof-products-grid {
   display: grid;

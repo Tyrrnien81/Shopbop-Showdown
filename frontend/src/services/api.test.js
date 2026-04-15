@@ -80,5 +80,50 @@ describe('API layer wrappers (src/services/api.js)', () => {
     voteApi.getResults('GAME01');
     expect(axiosInstance.get).toHaveBeenCalledWith('/games/GAME01/results');
   });
+
+  it('historyApi.getHistory calls GET /games/history', async () => {
+    const axiosInstance = createAxiosMock();
+
+    vi.doMock('axios', () => ({
+      default: {
+        create: vi.fn(() => axiosInstance),
+      },
+    }));
+
+    const { historyApi } = await import('./api.js');
+
+    historyApi.getHistory();
+    expect(axiosInstance.get).toHaveBeenCalledWith('/games/history');
+  });
+
+  it('historyApi.getPopularProducts calls GET /popular-products with default limit', async () => {
+    const axiosInstance = createAxiosMock();
+
+    vi.doMock('axios', () => ({
+      default: {
+        create: vi.fn(() => axiosInstance),
+      },
+    }));
+
+    const { historyApi } = await import('./api.js');
+
+    historyApi.getPopularProducts();
+    expect(axiosInstance.get).toHaveBeenCalledWith('/popular-products', { params: { limit: 12 } });
+  });
+
+  it('historyApi.getPopularProducts calls GET /popular-products with custom limit', async () => {
+    const axiosInstance = createAxiosMock();
+
+    vi.doMock('axios', () => ({
+      default: {
+        create: vi.fn(() => axiosInstance),
+      },
+    }));
+
+    const { historyApi } = await import('./api.js');
+
+    historyApi.getPopularProducts(24);
+    expect(axiosInstance.get).toHaveBeenCalledWith('/popular-products', { params: { limit: 24 } });
+  });
 });
 
