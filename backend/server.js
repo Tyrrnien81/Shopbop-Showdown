@@ -309,6 +309,10 @@ async function searchShopbop(query, limit = 20, offset = 0, { sort, minPrice, ma
 // HEALTH CHECK
 // ============================================================
 
+app.get('/', (req, res) => {
+  res.json({ service: 'ShopBop Showdown API', status: 'running' });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', port: PORT });
 });
