@@ -3,6 +3,7 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { gameApi, avatarApi } from '../services/api';
 import useGameStore from '../store/gameStore';
 import socketService from '../services/socket';
+import { QRCodeSVG } from 'qrcode.react';
 
 function Lobby() {
   const { gameId } = useParams();
@@ -28,6 +29,7 @@ function Lobby() {
   const [showJoinForm, setShowJoinForm] = useState(false);
   const hasJoinedRef = useRef(false); // guard against StrictMode double-invoke
   const fileInputRef = useRef(null);
+  const [showQR, setShowQR] = useState(false);
 
   // Avatar generation state
   const [photoTab, setPhotoTab] = useState('upload'); // 'upload' | 'ai'
@@ -295,8 +297,44 @@ function Lobby() {
             </svg>
             Copy
           </button>
+          <button onClick={() => setShowQR(!showQR)} className="btn btn-small btn-outline">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="2" y="2" width="8" height="8" rx="1" />
+              <rect x="14" y="2" width="8" height="8" rx="1" />
+              <rect x="2" y="14" width="8" height="8" rx="1" />
+              <rect x="14" y="14" width="4" height="4" />
+              <path d="M22 14h-4v4" />
+              <path d="M18 22v-4h4" />
+            </svg>
+            {showQR ? 'Hide QR' : 'QR Code'}
+          </button>
         </div>
       </header>
+
+      {showQR && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: '20px',
+          margin: '0 auto 16px',
+          background: 'white',
+          borderRadius: '16px',
+          maxWidth: '220px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+        }}>
+          <QRCodeSVG
+            value={`${window.location.origin}/join/${gameId}`}
+            size={180}
+            level="M"
+            marginSize={0}
+          />
+        <p style={{ color: '#666', fontSize: '0.78rem', marginTop: '12px', textAlign: 'center' }}>
+          Scan to join this room
+        </p>
+        </div>
+      )}
+
 
       {error && <div className="error-message">{error}</div>}
 
@@ -545,9 +583,9 @@ function Lobby() {
       {/* Share Link */}
       {currentPlayer && (
         <div style={{ textAlign: 'center', color: 'var(--text-light)', fontSize: '0.85rem', marginBottom: '8px' }}>
-          Share this link to invite friends:{' '}
+          Share this link or QR code to invite friends:{' '}
           <code style={{ color: 'var(--text-primary)' }}>
-            {window.location.origin}/lobby/{gameId}?username=FriendName
+            {window.location.origin}/join/{gameId}
           </code>
         </div>
       )}
