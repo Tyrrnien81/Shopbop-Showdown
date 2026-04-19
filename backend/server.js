@@ -437,7 +437,7 @@ app.get('/api/products/:productSin', async (req, res) => {
 // POST /api/games — create a new game
 app.post('/api/games', async (req, res) => {
   try {
-    const { hostUsername, theme, budget, maxPlayers, timeLimit, singlePlayer, themeMode, votingMode } = req.body;
+    const { hostUsername, theme, budget, maxPlayers, timeLimit, singlePlayer, themeMode, votingMode, roomName, isPublic } = req.body;
 
     if (!hostUsername) {
       return res.status(400).json({ error: 'hostUsername is required' });
@@ -475,6 +475,9 @@ app.post('/api/games', async (req, res) => {
       singlePlayer: Boolean(singlePlayer),
       themeMode: themeMode || 'vote', // 'vote' or 'pick'
       votingMode: votingMode || 'star', // 'star' or 'ranking'
+      roomName: roomName || `${hostUsername}'s Room`,
+      isPublic: Boolean(isPublic),
+      expiresAt: Math.floor(Date.now() / 1000) + 60 * 60 * 2, // 2 hours from now, Unix timestamp
     };
 
     await Promise.all([
@@ -551,6 +554,38 @@ app.get('/api/games/history', async (req, res) => {
   } catch (err) {
     console.error('History error:', err.message);
     res.status(500).json({ error: 'Failed to load history' });
+  }
+});
+
+// GET /api/games/public — list all public active games
+app.get('/api/games/public', async (req, res) => {
+  try {
+    const games = await db.getPublicActiveGames();
+
+    // Only return games in LOBBY status (joinable), sorted newest first
+    const joinable = games
+      .filter(g => g.status === 'LOBBY' && !g.singlePlayer)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    // Return only the fields the frontend needs — don't expose playerIds etc.
+    const summary = joinable.map(g => ({
+      gameId: g.gameId,
+      roomName: g.roomName,
+      hostPlayerId: g.hostPlayerId,
+      budget: g.budget,
+      timeLimit: g.timeLimit,
+      maxPlayers: g.maxPlayers,
+      playerCount: (g.playerIds || []).length,
+      themeName: g.themeName || g.theme,
+      themeMode: g.themeMode,
+      votingMode: g.votingMode,
+      createdAt: g.createdAt,
+    }));
+
+    res.json({ games: summary });
+  } catch (err) {
+    console.error('Public games error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch public games' });
   }
 });
 

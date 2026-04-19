@@ -65,4 +65,22 @@ async function scanAllGames() {
   return items;
 }
 
-module.exports = { getGame, createGame, appendPlayerId, updateGameStatus, scanAllGames };
+async function getPublicActiveGames() {
+  const items = [];
+  let lastKey;
+  do {
+    const params = {
+      TableName: TABLE,
+      FilterExpression: '#s <> :completed AND isPublic = :true',
+      ExpressionAttributeNames: { '#s': 'status' },
+      ExpressionAttributeValues: { ':completed': 'COMPLETED', ':true': true },
+    };
+    if (lastKey) params.ExclusiveStartKey = lastKey;
+    const { Items, LastEvaluatedKey } = await docClient.send(new ScanCommand(params));
+    items.push(...(Items || []));
+    lastKey = LastEvaluatedKey;
+  } while (lastKey);
+  return items;
+}
+
+module.exports = { getGame, createGame, appendPlayerId, updateGameStatus, scanAllGames, getPublicActiveGames };
