@@ -25,6 +25,8 @@ function CreateGame() {
     singlePlayer: false,
     themeMode: 'vote', // 'vote' | 'pick'
     votingMode: 'star', // 'star' | 'ranking'
+    roomName: '',
+    isPublic: true,
   });
 
   const handleThemeSelect = (themeId) => {
@@ -272,7 +274,73 @@ function CreateGame() {
               Solo Mode
             </span>
           </div>
+          
+          {/* Room Settings */}
+          {!formData.singlePlayer && (
+            <div style={{ marginBottom: '24px' }}>
+              <div className="form-group" style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '6px' }}>
+                  Room Name <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder={`${formData.hostUsername}'s Room`}
+                  value={formData.roomName}
+                  onChange={(e) => setFormData(prev => ({ ...prev, roomName: e.target.value }))}
+                  maxLength={40}
+                  style={{
+                    width: '100%',
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-light)',
+                    color: 'var(--text-primary)',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
 
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setFormData(prev => ({ ...prev, isPublic: !prev.isPublic }))}
+                  style={{
+                    width: '44px',
+                    height: '24px',
+                    borderRadius: '12px',
+                    border: 'none',
+                    background: formData.isPublic ? 'var(--primary-orange)' : 'var(--border-medium)',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                  }}
+                >
+                  <div style={{
+                    width: '18px',
+                    height: '18px',
+                    borderRadius: '50%',
+                    background: 'white',
+                    position: 'absolute',
+                    top: '3px',
+                    left: formData.isPublic ? '23px' : '3px',
+                    transition: 'left 0.2s',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+                  }} />
+                </button>
+                <div>
+                  <span style={{ fontSize: '0.9rem', color: 'var(--text-dark)', fontWeight: 500 }}>
+                    {formData.isPublic ? 'Public Room' : 'Private Room'}
+                  </span>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-light)', margin: '2px 0 0' }}>
+                    {formData.isPublic ? 'Anyone can find and join this room' : 'Only people with the code can join'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Launch Button */}
           <div className="create-game-footer">
             <button type="submit" className="btn btn-primary" disabled={isLoading}>

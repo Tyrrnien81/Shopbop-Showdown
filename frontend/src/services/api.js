@@ -39,6 +39,7 @@ export const gameApi = {
   getPlayers: (gameId) => api.get(`/games/${gameId}/players`),
   voteTheme: (gameId, data) => api.post(`/games/${gameId}/theme-vote`, data),
   getThemeVote: (gameId) => api.get(`/games/${gameId}/theme-vote`),
+  getPublicGames: () => api.get('/games/public'),
 };
 
 // Outfit Management APIs

@@ -7,4 +7,5 @@ export { default as Voting } from './Voting';
 export { default as Results } from './Results';
 export { default as Analytics } from './Analytics';
 export { default as HallOfFame } from './HallOfFame';
+export { default as BrowseRooms } from './BrowseRooms';
 export { default as JoinRedirect } from './JoinRedirect';
