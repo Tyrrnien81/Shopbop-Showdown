@@ -213,29 +213,31 @@ function Home() {
                   required
                 />
               </div>
-              <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                    Join Room
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    onClick={() => {
+                      if (joinCode && username) {
+                        navigate(`/lobby/${joinCode}?username=${encodeURIComponent(username)}&audience=true`);
+                      }
+                    }}
+                    style={{ flex: 1 }}
+                  >
+                    Watch & Vote
+                  </button>
+                </div>
                 <button
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => setShowJoinModal(false)}
-                  style={{ flex: 1 }}
+                  style={{ width: '100%' }}
                 >
                   Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  onClick={() => {
-                    if(joinCode && username){
-                      navigate(`/lobby/${joinCode}?username=${encodeURIComponent(username)}&audience=true`);
-                    }
-                  }}
-                  style={{ flex: 1}}
-                  >
-                    Watch & Vote
-                  </button>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
-                  Join Room
                 </button>
               </div>
             </form>
