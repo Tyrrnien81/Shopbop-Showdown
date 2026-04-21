@@ -576,6 +576,7 @@ app.get('/api/games/public', async (req, res) => {
       timeLimit: g.timeLimit,
       maxPlayers: g.maxPlayers,
       playerCount: (g.playerIds || []).length,
+      contestantCount: (g.playerIds || []).length,
       themeName: g.themeName || g.theme,
       themeMode: g.themeMode,
       votingMode: g.votingMode,
@@ -652,8 +653,12 @@ app.post('/api/games/:gameId/join', async (req, res) => {
     const { username, isAudience } = req.body;
 
     // Audience doesn't count toward maxPlayers; contestants do
-    if (!isAudience && game.playerIds.length >= game.maxPlayers) {
-      return res.status(400).json({ error: 'Game is full' });
+    if (!isAudience) {
+      const existingPlayers = await db.getPlayersByGameId(game.gameId);
+      const contestantCount = existingPlayers.filter(p => !p.isAudience).length;
+      if (contestantCount >= game.maxPlayers) {
+        return res.status(400).json({ error: 'Game is full' });
+      }
     }
     if (!username) return res.status(400).json({ error: 'username is required' });
 

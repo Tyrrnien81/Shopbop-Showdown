@@ -503,12 +503,19 @@ function Game() {
     const fetchStatus = async () => {
       try {
         const response = await gameApi.getPlayers(gameId);
-        const playerList = response.data.players || [];
-        const submitted = playerList.filter(p => p.hasSubmitted).length;
+        // const playerList = response.data.players || [];
+        // const submitted = playerList.filter(p => p.hasSubmitted).length;
+        // setSubmissionStatus({
+        //   submitted,
+        //   total: playerList.length,
+        //   players: playerList.map(p => ({ name: p.username, submitted: p.hasSubmitted })),
+        // });
+        const contestants = playerList.filter(p => !p.isAudience);
+        const submitted = contestants.filter(p => p.hasSubmitted).length;
         setSubmissionStatus({
           submitted,
-          total: playerList.length,
-          players: playerList.map(p => ({ name: p.username, submitted: p.hasSubmitted })),
+          total: contestants.length,
+          players: contestants.map(p => ({ name: p.username, submitted: p.hasSubmitted })),
         });
       } catch { /* ignore */ }
     };
