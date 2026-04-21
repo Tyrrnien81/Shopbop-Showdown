@@ -82,9 +82,10 @@ function Lobby() {
     setError(null);
 
     const username = searchParams.get('username');
+    const asAudience = searchParams.get('audience') === 'true';
     if (username && !currentPlayer && !hasJoinedRef.current) {
       hasJoinedRef.current = true;
-      handleJoinGame(username);
+      handleJoinGame(username, asAudience);
     } else if (currentPlayer?.gameId === gameId) {
       // Already in game — just fetch fresh data
       fetchGameData();

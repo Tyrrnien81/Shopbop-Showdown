@@ -222,6 +222,18 @@ function Home() {
                 >
                   Cancel
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => {
+                    if(joinCode && username){
+                      navigate(`/lobby/${joinCode}?username=${encodeURIComponent(username)}&audience=true`);
+                    }
+                  }}
+                  style={{ flex: 1}}
+                  >
+                    Watch & Vote
+                  </button>
                 <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
                   Join Room
                 </button>
