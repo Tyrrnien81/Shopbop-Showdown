@@ -648,7 +648,8 @@ app.post('/api/games/:gameId/join', async (req, res) => {
   try {
     const game = await db.getGame(req.params.gameId);
     if (!game) return res.status(404).json({ error: 'Game not found' });
-    if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game has already started' });
+    if (game.status === 'COMPLETED') return res.status(400).json({ error: 'Game has already ended' });
+    if (game.status !== 'LOBBY' && !isAudience) return res.status(400).json({ error: 'Game has already started' });
 
     const { username, isAudience } = req.body;
 

@@ -239,7 +239,8 @@ function Lobby() {
             }}
           />
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-            <button
+          {players.filter(p=> !p.isAudience).length < (game?.maxPlayers ?? 4) && (
+            <button 
               onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim())}
               className="btn btn-primary"
               disabled={joining || !joinUsername.trim()}
@@ -247,6 +248,7 @@ function Lobby() {
             >
               {joining ? 'Joining...' : 'Play'}
             </button>
+          )}
             <button
               onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim(), true)}
               className="btn btn-outline"
@@ -355,7 +357,7 @@ function Lobby() {
           </div>
           <div className="info-card">
             <div className="info-card-label">Players</div>
-            <div className="info-card-value">{players.length}/{game.maxPlayers}</div>
+            <div className="info-card-value">{players.filter(p=> !p.isAudience).length}/{game.maxPlayers}</div>
           </div>
         </div>
       )}
@@ -559,7 +561,7 @@ function Lobby() {
           ))}
 
           {/* Empty slots */}
-          {game && [...Array(Math.max(0, game.maxPlayers - players.length))].map((_, i) => (
+          {game && [...Array(Math.max(0, game.maxPlayers - players.filter(p => !p.isAudience).length))].map((_, i) => (
             <div key={`empty-${i}`} className="player-card" style={{ opacity: 0.4, border: '2px dashed var(--border-light)' }}>
               <div className="player-avatar" style={{
                 background: 'var(--border-light)',
