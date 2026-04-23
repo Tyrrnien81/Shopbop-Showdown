@@ -159,9 +159,10 @@ function Voting() {
     try {
       const response = await outfitApi.getOutfits(gameId);
       const fetched = response.data.outfits || [];
-      setOutfits(fetched.length > 0 ? fetched : mockOutfits);
+      const source = fetched.length > 0 ? fetched : mockOutfits;
+      setOutfits(source.map(o => ({ ...o, tryOnImageUrl: o.tryOnImageUrl || o.tryOnImage || null })));
     } catch {
-      setOutfits(mockOutfits);
+      setOutfits(mockOutfits.map(o => ({ ...o, tryOnImageUrl: o.tryOnImageUrl || o.tryOnImage || null })));
     } finally {
       setLoading(false);
     }
@@ -475,8 +476,8 @@ function Voting() {
 
                   {/* Outfit preview */}
                   <div className="rank-outfit-preview">
-                    {outfit.tryOnImage ? (
-                      <img src={outfit.tryOnImage} alt="look" referrerPolicy="no-referrer" />
+                    {outfit.tryOnImageUrl ? (
+                      <img src={outfit.tryOnImageUrl} alt="look" referrerPolicy="no-referrer" />
                     ) : outfit.products[0]?.imageUrl ? (
                       <img src={outfit.products[0].imageUrl} alt="look" referrerPolicy="no-referrer" />
                     ) : (
@@ -530,9 +531,9 @@ function Voting() {
                 {/* Expanded item detail */}
                 {isExpanded && (
                   <div className="rank-item-expanded">
-                    {outfit.tryOnImage && (
+                    {outfit.tryOnImageUrl && (
                       <div className="rank-expanded-model">
-                        <img src={outfit.tryOnImage} alt="full look" referrerPolicy="no-referrer" />
+                        <img src={outfit.tryOnImageUrl} alt="full look" referrerPolicy="no-referrer" />
                       </div>
                     )}
                     <div className="rank-expanded-products">
@@ -628,12 +629,12 @@ function Voting() {
 
       {/* Outfit Display */}
       <div className={`voting-outfit-display ${revealing ? 'outfit-revealing' : 'outfit-revealed'}`}>
-        <div className={`voting-look-layout ${currentOutfit.tryOnImage ? 'has-model' : ''}`}>
+        <div className={`voting-look-layout ${currentOutfit.tryOnImageUrl ? 'has-model' : ''}`}>
           {/* Main Image — AI generated or product grid fallback */}
           <div className="voting-main-image">
-            {currentOutfit.tryOnImage ? (
+            {currentOutfit.tryOnImageUrl ? (
               <img
-                src={currentOutfit.tryOnImage}
+                src={currentOutfit.tryOnImageUrl}
                 alt={`${currentOutfit.playerName}'s look`}
                 className="voting-model-img"
                 referrerPolicy="no-referrer"
@@ -654,7 +655,7 @@ function Voting() {
           </div>
 
           {/* Side Items Panel — visible when AI image exists */}
-          {currentOutfit.tryOnImage && (
+          {currentOutfit.tryOnImageUrl && (
             <div className="voting-side-items">
               <div className="voting-side-items-header">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

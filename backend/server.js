@@ -5,6 +5,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const { Server } = require('socket.io');
 const db = require('./db');
+const s3 = require('./s3/s3Client');
 const analyticsRouter = require('./routes/analytics');
 
 // Lambda SDK — loaded only when Lambda mode is active
@@ -38,8 +39,22 @@ const SHOPBOP_CLIENT_ID = process.env.SHOPBOP_CLIENT_ID || 'Shopbop-UW-Team1-202
 
 let io;
 
-// In-memory cache for tryOnImages (too large for DynamoDB's 400KB item limit)
+// Short-term in-memory buffer for try-on images; primary persistence is now S3.
+// Kept as a fallback for the request window when S3 is unconfigured or upload fails.
 const tryOnImageCache = new Map();
+
+// Uploads a try-on image to S3 and returns the public URL.
+// Returns null if S3 is not configured, the image is missing, or the upload fails.
+async function uploadTryOnImageToS3(gameId, playerId, tryOnImage) {
+  if (!tryOnImage || !s3.isConfigured()) return null;
+  try {
+    const key = `outfits/${gameId}/${playerId}.png`;
+    return await s3.uploadImage(tryOnImage, key);
+  } catch (err) {
+    console.error(`S3 upload failed for ${gameId}/${playerId}:`, err.message);
+    return null;
+  }
+}
 
 // In-memory cache for theme voting (ephemeral, no need for DB)
 const themeVoteCache = new Map(); // gameId -> { options: [...], votes: { playerId: themeId }, timer }
@@ -857,18 +872,22 @@ app.post('/api/outfits', async (req, res) => {
     // Allow re-submission: update existing outfit if player already submitted
     if (player.hasSubmitted && player.outfitId) {
       const submittedAt = new Date().toISOString();
-      await db.updateOutfit(player.outfitId, {
+      const tryOnImageUrl = await uploadTryOnImageToS3(gameId, playerId, tryOnImage);
+      const updates = {
         products: outfitProducts || [],
         totalPrice: totalPrice || 0,
         submittedAt,
-      });
-      // Cache tryOnImage in memory (too large for DynamoDB)
+      };
+      if (tryOnImageUrl) updates.tryOnImageUrl = tryOnImageUrl;
+      await db.updateOutfit(player.outfitId, updates);
+      // Short-term in-memory fallback (used only if S3 upload failed or is unconfigured)
       if (tryOnImage) tryOnImageCache.set(player.outfitId, tryOnImage);
       console.log(`Outfit ${player.outfitId} re-submitted by player ${playerId}`);
-      return res.status(200).json({ outfitId: player.outfitId, submittedAt });
+      return res.status(200).json({ outfitId: player.outfitId, submittedAt, tryOnImageUrl: tryOnImageUrl || null });
     }
 
     const outfitId = generateId();
+    const tryOnImageUrl = await uploadTryOnImageToS3(gameId, playerId, tryOnImage);
     const outfit = {
       outfitId,
       gameId,
@@ -876,9 +895,10 @@ app.post('/api/outfits', async (req, res) => {
       products: outfitProducts || [],
       totalPrice: totalPrice || 0,
       submittedAt: new Date().toISOString(),
+      ...(tryOnImageUrl && { tryOnImageUrl }),
     };
 
-    // Cache tryOnImage in memory (too large for DynamoDB)
+    // Short-term in-memory fallback (used only if S3 upload failed or is unconfigured)
     if (tryOnImage) tryOnImageCache.set(outfitId, tryOnImage);
 
     await Promise.all([
@@ -916,7 +936,7 @@ app.post('/api/outfits', async (req, res) => {
     // Notify all clients in the room
     if (io) io.to(gameId).emit('outfit-submitted', { submittedCount, totalPlayers, gameStatus: newStatus });
 
-    res.status(201).json({ outfitId, submittedAt: outfit.submittedAt });
+    res.status(201).json({ outfitId, submittedAt: outfit.submittedAt, tryOnImageUrl: tryOnImageUrl || null });
   } catch (err) {
     console.error('Submit outfit error:', err.message);
     res.status(500).json({ error: 'Failed to submit outfit' });
@@ -940,6 +960,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           playerId: outfit.playerId,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
+          tryOnImageUrl: outfit.tryOnImageUrl || null,
           tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
         });
       } else {
@@ -951,6 +972,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           playerName: player?.username,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
+          tryOnImageUrl: outfit.tryOnImageUrl || null,
           tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
         });
       }
@@ -1111,6 +1133,7 @@ app.get('/api/games/:gameId/results', async (req, res) => {
         totalVotes: count,
         products: outfit.products,
         totalPrice: outfit.totalPrice,
+        tryOnImageUrl: outfit.tryOnImageUrl || null,
         tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
       };
     });
