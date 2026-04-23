@@ -4,9 +4,14 @@ import { SpotLight as VolumetricSpotLight, Sparkles } from '@react-three/drei';
 import OutfitModel, { WALK_DURATION, POSE_DURATION } from './OutfitModel';
 import Preloader from './Preloader';
 import Flashes from './Flashes';
+import RunwayOverlays from './RunwayOverlays';
 
 const POSE_START = WALK_DURATION;
 const POSE_END = WALK_DURATION + POSE_DURATION;
+const PRESHOW_DURATION = 2.0; // seconds the title card is on screen before the first walk
+
+const AMBIENT_AUDIO_SRC = '/audio/runway-ambient.mp3';
+const SHUTTER_AUDIO_SRC = '/audio/camera-shutter.mp3';
 
 function Floor() {
   // Slightly transparent so the floor reflection below y=0 is visible through the glossy surface.
@@ -84,7 +89,7 @@ function BreathingKeyLight({ startTimeRef }) {
   );
 }
 
-function Scene({ outfit, startTimeRef, onOutfitReady, onOutfitDone }) {
+function Scene({ outfit, walkStartTimeRef, onOutfitReady, onOutfitDone }) {
   return (
     <>
       <color attach="background" args={['#0a0a0a']} />
@@ -92,7 +97,7 @@ function Scene({ outfit, startTimeRef, onOutfitReady, onOutfitDone }) {
 
       <ambientLight intensity={0.25} color="#1a1a1a" />
 
-      <BreathingKeyLight startTimeRef={startTimeRef} />
+      <BreathingKeyLight startTimeRef={walkStartTimeRef} />
 
       <VolumetricSpotLight
         position={[0, 7, -4]}
@@ -159,7 +164,7 @@ function Scene({ outfit, startTimeRef, onOutfitReady, onOutfitDone }) {
       {outfit && (
         <OutfitModel
           outfit={outfit}
-          startTimeRef={startTimeRef}
+          startTimeRef={walkStartTimeRef}
           onReady={onOutfitReady}
           onDone={onOutfitDone}
         />
@@ -169,16 +174,22 @@ function Scene({ outfit, startTimeRef, onOutfitReady, onOutfitDone }) {
 }
 
 export default function RunwayShow({ outfits = [], theme = '', onComplete = () => {} }) {
-  void theme;
-
   const [ready, setReady] = useState(false);
-  const startTimeRef = useRef(null);
+  const [muted, setMuted] = useState(false);
+  const mutedRef = useRef(muted);
+  const showStartTimeRef = useRef(null);
+  const walkStartTimeRef = useRef(null);
+  const ambientAudioRef = useRef(null);
   const onCompleteRef = useRef(onComplete);
   useEffect(() => {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
+  useEffect(() => {
+    mutedRef.current = muted;
+    if (ambientAudioRef.current) ambientAudioRef.current.muted = muted;
+  }, [muted]);
 
-  // Stage 2: single outfit only — we'll grow this into a multi-outfit sequencer later.
+  // Stage 2: single outfit only — Stage 5 will sequence multiple.
   const outfit = outfits[0];
 
   // No outfit → skip the show entirely.
@@ -193,14 +204,54 @@ export default function RunwayShow({ outfits = [], theme = '', onComplete = () =
   }, [outfits]);
 
   const handleOutfitReady = useCallback(() => {
-    if (startTimeRef.current) return;
-    startTimeRef.current = performance.now();
+    if (showStartTimeRef.current) return;
+    const now = performance.now();
+    showStartTimeRef.current = now;
     setReady(true);
+    // The actual walk starts after the pre-show title card finishes.
+    setTimeout(() => {
+      walkStartTimeRef.current = performance.now();
+    }, PRESHOW_DURATION * 1000);
   }, []);
 
   const handleOutfitDone = useCallback(() => {
     onCompleteRef.current();
   }, []);
+
+  // Ambient audio loop — starts when the show becomes ready, cleans up on unmount.
+  useEffect(() => {
+    if (!ready) return;
+    const audio = new Audio(AMBIENT_AUDIO_SRC);
+    audio.loop = true;
+    audio.volume = 0.3;
+    audio.muted = mutedRef.current;
+    audio.play().catch((err) => {
+      // Expected when browsers block autoplay or the file is missing.
+      console.warn('Runway ambient audio did not start:', err?.message || err);
+    });
+    ambientAudioRef.current = audio;
+    return () => {
+      audio.pause();
+      audio.src = '';
+      ambientAudioRef.current = null;
+    };
+  }, [ready]);
+
+  // Shutter sound per camera flash. Fresh Audio() each time so rapid flashes can overlap.
+  const playShutter = useCallback(() => {
+    if (mutedRef.current) return;
+    try {
+      const audio = new Audio(SHUTTER_AUDIO_SRC);
+      audio.volume = 0.1 + Math.random() * 0.2;
+      const p = audio.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch {
+      /* ignored — audio is non-critical */
+    }
+  }, []);
+
+  // Start the walk-clock offset for anyone reading it before the timeout resolves.
+  // Flashes/OutfitModel will simply wait until walkStartTimeRef is populated.
 
   if (!outfit) return null;
 
@@ -223,7 +274,7 @@ export default function RunwayShow({ outfits = [], theme = '', onComplete = () =
         <Suspense fallback={null}>
           <Scene
             outfit={outfit}
-            startTimeRef={startTimeRef}
+            walkStartTimeRef={walkStartTimeRef}
             onOutfitReady={handleOutfitReady}
             onOutfitDone={handleOutfitDone}
           />
@@ -243,7 +294,84 @@ export default function RunwayShow({ outfits = [], theme = '', onComplete = () =
       />
 
       {/* Camera flashes (DOM overlay; driven by the same clock as the walk) */}
-      {ready && <Flashes startTimeRef={startTimeRef} />}
+      {ready && <Flashes startTimeRef={walkStartTimeRef} onShutter={playShutter} />}
+
+      {/* Typography — title card + per-outfit info */}
+      {ready && (
+        <RunwayOverlays
+          showStartTimeRef={showStartTimeRef}
+          walkStartTimeRef={walkStartTimeRef}
+          theme={theme}
+          outfit={outfit}
+          outfitCount={outfits.length}
+        />
+      )}
+
+      {/* Mute toggle */}
+      {ready && (
+        <button
+          type="button"
+          onClick={() => setMuted((m) => !m)}
+          aria-label={muted ? 'Unmute sound' : 'Mute sound'}
+          style={{
+            position: 'absolute',
+            top: '20px',
+            right: '20px',
+            width: '36px',
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0, 0, 0, 0.35)',
+            border: '1px solid rgba(255, 255, 255, 0.18)',
+            borderRadius: '50%',
+            color: 'rgba(255, 255, 255, 0.85)',
+            cursor: 'pointer',
+            zIndex: 10,
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          {muted ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <line x1="23" y1="9" x2="17" y2="15" />
+              <line x1="17" y1="9" x2="23" y2="15" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+            </svg>
+          )}
+        </button>
+      )}
+
+      {/* Skip */}
+      {ready && (
+        <button
+          type="button"
+          onClick={() => onCompleteRef.current()}
+          style={{
+            position: 'absolute',
+            bottom: '20px',
+            right: '20px',
+            background: 'transparent',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            color: 'rgba(255, 255, 255, 0.55)',
+            padding: '6px 16px',
+            borderRadius: '999px',
+            fontFamily: "'Inter', system-ui, sans-serif",
+            fontSize: '11px',
+            letterSpacing: '0.25em',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
+            zIndex: 10,
+          }}
+        >
+          Skip
+        </button>
+      )}
 
       {!ready && <Preloader />}
     </div>
