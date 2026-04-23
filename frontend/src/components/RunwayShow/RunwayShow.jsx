@@ -1,8 +1,12 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { SpotLight as VolumetricSpotLight } from '@react-three/drei';
-import OutfitModel from './OutfitModel';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { SpotLight as VolumetricSpotLight, Sparkles } from '@react-three/drei';
+import OutfitModel, { WALK_DURATION, POSE_DURATION } from './OutfitModel';
 import Preloader from './Preloader';
+import Flashes from './Flashes';
+
+const POSE_START = WALK_DURATION;
+const POSE_END = WALK_DURATION + POSE_DURATION;
 
 function Floor() {
   // Slightly transparent so the floor reflection below y=0 is visible through the glossy surface.
@@ -42,6 +46,44 @@ function AimedSpotLight({ position, target, color, intensity, angle, penumbra, d
   );
 }
 
+// Illumination spotlight paired with the overhead volumetric cone.
+// Its intensity breathes up during the pose moment, which feels like a
+// photographer's strobe catching on for the hero shot.
+function BreathingKeyLight({ startTimeRef }) {
+  const lightRef = useRef();
+  useFrame(() => {
+    const light = lightRef.current;
+    const startTime = startTimeRef?.current;
+    if (!light || !startTime) return;
+    const elapsed = (performance.now() - startTime) / 1000;
+
+    let boost = 1;
+    if (elapsed >= POSE_START && elapsed < POSE_END) {
+      const p = (elapsed - POSE_START) / (POSE_END - POSE_START);
+      boost = 1 + 0.3 * Math.sin(p * Math.PI); // smooth pulse up and back
+    }
+    light.intensity = 55 * boost;
+    // Slight warm shift during the pose for a subtle hero-light feel
+    if (elapsed >= POSE_START && elapsed < POSE_END) {
+      light.color.setHex(0xffd9a8);
+    } else {
+      light.color.setHex(0xffe8d6);
+    }
+  });
+  return (
+    <spotLight
+      ref={lightRef}
+      position={[0, 7, -4]}
+      angle={0.55}
+      penumbra={0.55}
+      distance={18}
+      intensity={55}
+      color="#ffe8d6"
+      decay={1.5}
+    />
+  );
+}
+
 function Scene({ outfit, startTimeRef, onOutfitReady, onOutfitDone }) {
   return (
     <>
@@ -49,6 +91,8 @@ function Scene({ outfit, startTimeRef, onOutfitReady, onOutfitDone }) {
       <fog attach="fog" args={['#0a0a0a', 8, 40]} />
 
       <ambientLight intensity={0.25} color="#1a1a1a" />
+
+      <BreathingKeyLight startTimeRef={startTimeRef} />
 
       <VolumetricSpotLight
         position={[0, 7, -4]}
@@ -100,6 +144,17 @@ function Scene({ outfit, startTimeRef, onOutfitReady, onOutfitDone }) {
       />
 
       <Floor />
+
+      {/* Dust motes drifting through the spotlight pools — subconscious atmosphere */}
+      <Sparkles
+        count={25}
+        scale={[4, 4, 18]}
+        position={[0, 2.2, -9]}
+        size={1.2}
+        speed={0.15}
+        opacity={0.35}
+        color="#fff3d0"
+      />
 
       {outfit && (
         <OutfitModel
@@ -174,6 +229,22 @@ export default function RunwayShow({ outfits = [], theme = '', onComplete = () =
           />
         </Suspense>
       </Canvas>
+
+      {/* Vignette — focuses attention centre-frame */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background:
+            'radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, rgba(0,0,0,0.55) 100%)',
+          pointerEvents: 'none',
+          zIndex: 2,
+        }}
+      />
+
+      {/* Camera flashes (DOM overlay; driven by the same clock as the walk) */}
+      {ready && <Flashes startTimeRef={startTimeRef} />}
+
       {!ready && <Preloader />}
     </div>
   );
