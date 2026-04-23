@@ -1,8 +1,38 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { gameApi, outfitApi, voteApi } from '../services/api';
 import useGameStore from '../store/gameStore';
 import socketService from '../services/socket';
+
+// Heavy (Three.js bundle) — only loads when the runway is actually about to play.
+const RunwayShow = lazy(() => import('../components/RunwayShow/RunwayShow'));
+
+// If the voting timer is already below this threshold when the page loads,
+// the player is arriving late (likely a refresh) and we skip the runway.
+const RUNWAY_MIN_TIMER_REMAINING = 45;
+
+function RunwayLoading() {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: '#0a0a0a',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'rgba(255, 255, 255, 0.8)',
+        fontFamily: "'Inter', system-ui, sans-serif",
+        fontSize: '13px',
+        letterSpacing: '0.35em',
+        textTransform: 'uppercase',
+        zIndex: 1000,
+      }}
+    >
+      Preparing the runway…
+    </div>
+  );
+}
 
 // Mock outfits for development
 const mockOutfits = [
@@ -140,6 +170,9 @@ function Voting() {
   const [votingTimeLeft, setVotingTimeLeft] = useState(null);
   const [endVotingPending, setEndVotingPending] = useState(false);
   const [voteStatus, setVoteStatus] = useState({ voted: 0, total: 0, players: [] });
+  // Runway plays before the voting UI. Dismissed when the runway completes,
+  // the player skips, or we detect a mid-phase refresh (timer < threshold).
+  const [showRunway, setShowRunway] = useState(true);
 
   // Initialize rankedOutfits when outfits load (ranking mode)
   useEffect(() => {
@@ -211,9 +244,14 @@ function Voting() {
     };
     const onVotingTimer = ({ remaining }) => {
       setVotingTimeLeft(typeof remaining === 'number' ? remaining : null);
+      // Skip the runway for late arrivals (e.g., refresh mid-voting).
+      if (typeof remaining === 'number' && remaining < RUNWAY_MIN_TIMER_REMAINING) {
+        setShowRunway(false);
+      }
     };
     const onGameCompleted = () => {
       setVotingComplete(true);
+      setShowRunway(false);
       navigate(`/results/${gameId}`);
     };
     socketService.on('vote-submitted', onVoteSubmitted);
@@ -396,6 +434,31 @@ function Voting() {
   };
 
   const handleViewResults = () => navigate(`/results/${gameId}`);
+
+  // ── Runway show (plays once before the voting UI) ──
+  if (showRunway) {
+    // Still waiting on outfits? Show the same preloader the runway uses so the transition
+    // is seamless and we don't mount RunwayShow with an empty array.
+    if (allOutfits.length === 0) {
+      return <RunwayLoading />;
+    }
+    const runwayOutfits = allOutfits.map(o => ({
+      tryOnImageUrl: o.tryOnImageUrl,
+      playerName: o.playerName || o.username,
+      totalCost: o.totalPrice,
+      itemCount: o.products?.length || 0,
+      playerId: o.playerId,
+    }));
+    return (
+      <Suspense fallback={<RunwayLoading />}>
+        <RunwayShow
+          outfits={runwayOutfits}
+          theme={game?.themeName || game?.theme || ''}
+          onComplete={() => setShowRunway(false)}
+        />
+      </Suspense>
+    );
+  }
 
   // ── Waiting / Complete screens (shared) ──
   if (hasVoted && !votingComplete) {

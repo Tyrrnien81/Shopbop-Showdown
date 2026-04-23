@@ -1,12 +1,9 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Component, lazy, Suspense } from 'react';
+import { Component } from 'react';
 import { Home, CreateGame, Lobby, ThemeVote, Game, Voting, Results, Analytics, HallOfFame, JoinRedirect, BrowseRooms} from './pages';
 import GuidedTour from './components/GuidedTour';
 import useGameStore from './store/gameStore';
 import './App.css';
-
-// Heavy (~600 KB with three.js) — load on demand so it doesn't bloat the homepage bundle.
-const RunwayShow = lazy(() => import('./components/RunwayShow/RunwayShow'));
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -61,40 +58,6 @@ function AppContent() {
           <Route path="/hall-of-fame" element={<HallOfFame />} />
           <Route path="/join/:gameId" element={<JoinRedirect />} />
           <Route path="/browse" element={<BrowseRooms />} />
-          <Route
-            path="/runway-test"
-            element={
-              <Suspense fallback={<div style={{ height: '100vh', background: '#0a0a0a' }} />}>
-                <RunwayShow
-                  outfits={[
-                    {
-                      tryOnImageUrl: 'https://picsum.photos/seed/runway-a/600/900',
-                      playerName: 'FashionFan22',
-                      totalCost: 1240,
-                      itemCount: 5,
-                      playerId: 'test-1',
-                    },
-                    {
-                      tryOnImageUrl: 'https://picsum.photos/seed/runway-b/600/900',
-                      playerName: 'StyleGuru',
-                      totalCost: 2450,
-                      itemCount: 4,
-                      playerId: 'test-2',
-                    },
-                    {
-                      tryOnImageUrl: 'https://picsum.photos/seed/runway-c/600/900',
-                      playerName: 'TrendSetter',
-                      totalCost: 875,
-                      itemCount: 3,
-                      playerId: 'test-3',
-                    },
-                  ]}
-                  theme="Runway Ready"
-                  onComplete={() => console.log('Runway test complete')}
-                />
-              </Suspense>
-            }
-          />
         </Routes>
       </div>
       <GuidedTour active={tourActive} onClose={endTour} />
