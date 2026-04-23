@@ -62,7 +62,7 @@ function CreateGame() {
 
       if (formData.singlePlayer) {
         // Auto-start and go straight to game
-        await gameApi.startGame(game.gameId);
+        await gameApi.startGame(game.gameId, player.playerId);
         navigate(`/game/${game.gameId}`);
       } else {
         navigate(`/lobby/${game.gameId}`);
