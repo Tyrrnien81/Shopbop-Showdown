@@ -1,9 +1,12 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Component } from 'react';
+import { Component, lazy, Suspense } from 'react';
 import { Home, CreateGame, Lobby, ThemeVote, Game, Voting, Results, Analytics, HallOfFame, JoinRedirect, BrowseRooms} from './pages';
 import GuidedTour from './components/GuidedTour';
 import useGameStore from './store/gameStore';
 import './App.css';
+
+// Heavy (~600 KB with three.js) — load on demand so it doesn't bloat the homepage bundle.
+const RunwayShow = lazy(() => import('./components/RunwayShow/RunwayShow'));
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -58,6 +61,14 @@ function AppContent() {
           <Route path="/hall-of-fame" element={<HallOfFame />} />
           <Route path="/join/:gameId" element={<JoinRedirect />} />
           <Route path="/browse" element={<BrowseRooms />} />
+          <Route
+            path="/runway-test"
+            element={
+              <Suspense fallback={<div style={{ height: '100vh', background: '#0a0a0a' }} />}>
+                <RunwayShow outfits={[]} theme="" onComplete={() => {}} />
+              </Suspense>
+            }
+          />
         </Routes>
       </div>
       <GuidedTour active={tourActive} onClose={endTour} />
