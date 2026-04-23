@@ -1089,6 +1089,20 @@ input::placeholder {
   animation: walletShake 0.6s ease;
 }
 
+.game-wallet.budget-warning .game-wallet-value {
+  color: #f59e0b;
+}
+
+.game-wallet.budget-critical .game-wallet-value {
+  color: #ef4444;
+  animation: criticalPulse 1.5s ease infinite;
+}
+
+@keyframes criticalPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
 .wallet-spend-fly {
   position: absolute;
   top: 0;
@@ -1595,6 +1609,27 @@ input::placeholder {
   display: none;
 }
 
+.product-card.over-budget {
+  opacity: 0.5;
+}
+
+.product-card.over-budget .product-image-container::after {
+  content: 'Over Budget';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(239, 68, 68, 0.9);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 5px 0;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
 .product-image-container {
   position: relative;
   aspect-ratio: 3/4;
@@ -1798,19 +1833,30 @@ input::placeholder {
 }
 
 .budget-bar {
-  height: 3px;
-  background: rgba(255, 255, 255, 0.08);
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 2px;
   overflow: hidden;
-  margin-bottom: 14px;
+  margin-bottom: 6px;
 }
 
 .budget-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--primary-orange), #f59e0b);
+  background: #22c55e;
   border-radius: 2px;
-  transition: width 0.3s ease;
+  transition: width 0.3s ease, background 0.4s ease;
 }
+
+.budget-status {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-align: right;
+  margin: 0 0 10px;
+  letter-spacing: 0.02em;
+}
+
+.budget-status.warning { color: #f59e0b; }
+.budget-status.critical { color: #ef4444; }
 
 .outfit-panel .btn-primary {
   width: 100%;
@@ -5320,18 +5366,32 @@ input::placeholder {
 
 .popup-box {
   background: #fff;
-  border-radius: 12px;
-  padding: 32px;
-  max-width: 380px;
+  border-radius: 16px;
+  padding: 28px 32px 28px;
+  max-width: 400px;
+  width: 90vw;
   text-align: center;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.popup-icon {
+  font-size: 2.2rem;
+  line-height: 1;
+  margin-bottom: 10px;
+}
+
+.popup-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  margin: 0 0 8px;
 }
 
 .popup-box p {
-  font-size: 1rem;
+  font-size: 0.92rem;
   margin: 0 0 20px;
-  color: #1a1a1a;
-  line-height: 1.5;
+  color: #444;
+  line-height: 1.6;
 }
 
 .popup-box .btn {
