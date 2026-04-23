@@ -68,11 +68,25 @@ function AppContent() {
                 <RunwayShow
                   outfits={[
                     {
-                      tryOnImageUrl: 'https://picsum.photos/seed/runway-test/600/900',
-                      playerName: 'Test Model',
+                      tryOnImageUrl: 'https://picsum.photos/seed/runway-a/600/900',
+                      playerName: 'FashionFan22',
                       totalCost: 1240,
                       itemCount: 5,
                       playerId: 'test-1',
+                    },
+                    {
+                      tryOnImageUrl: 'https://picsum.photos/seed/runway-b/600/900',
+                      playerName: 'StyleGuru',
+                      totalCost: 2450,
+                      itemCount: 4,
+                      playerId: 'test-2',
+                    },
+                    {
+                      tryOnImageUrl: 'https://picsum.photos/seed/runway-c/600/900',
+                      playerName: 'TrendSetter',
+                      totalCost: 875,
+                      itemCount: 3,
+                      playerId: 'test-3',
                     },
                   ]}
                   theme="Runway Ready"

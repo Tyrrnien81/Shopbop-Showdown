@@ -1,20 +1,35 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { SpotLight as VolumetricSpotLight, Sparkles } from '@react-three/drei';
-import OutfitModel, { WALK_DURATION, POSE_DURATION } from './OutfitModel';
+import * as THREE from 'three';
+import OutfitModel, { WALK_DURATION, POSE_DURATION, TOTAL_DURATION as WALK_PHASE_DURATION } from './OutfitModel';
 import Preloader from './Preloader';
 import Flashes from './Flashes';
 import RunwayOverlays from './RunwayOverlays';
 
 const POSE_START = WALK_DURATION;
 const POSE_END = WALK_DURATION + POSE_DURATION;
-const PRESHOW_DURATION = 2.0; // seconds the title card is on screen before the first walk
+
+// Sequencer phase durations (seconds)
+const PRESHOW_DURATION = 2.0;
+const DARK_PHASE_DURATION = 1.0;
+const VOTE_NOW_DURATION = 1.5;
+const TEXTURE_LOAD_TIMEOUT_MS = 10_000;
 
 const AMBIENT_AUDIO_SRC = '/audio/runway-ambient.mp3';
 const SHUTTER_AUDIO_SRC = '/audio/camera-shutter.mp3';
 
+// Fisher–Yates shuffle (in-place on a copy). Uniform, unlike Array.sort(() => random).
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 function Floor() {
-  // Slightly transparent so the floor reflection below y=0 is visible through the glossy surface.
   return (
     <mesh rotation-x={-Math.PI / 2} position={[0, 0, -12]} receiveShadow>
       <planeGeometry args={[3.5, 30]} />
@@ -51,9 +66,6 @@ function AimedSpotLight({ position, target, color, intensity, angle, penumbra, d
   );
 }
 
-// Illumination spotlight paired with the overhead volumetric cone.
-// Its intensity breathes up during the pose moment, which feels like a
-// photographer's strobe catching on for the hero shot.
 function BreathingKeyLight({ startTimeRef }) {
   const lightRef = useRef();
   useFrame(() => {
@@ -65,15 +77,12 @@ function BreathingKeyLight({ startTimeRef }) {
     let boost = 1;
     if (elapsed >= POSE_START && elapsed < POSE_END) {
       const p = (elapsed - POSE_START) / (POSE_END - POSE_START);
-      boost = 1 + 0.3 * Math.sin(p * Math.PI); // smooth pulse up and back
-    }
-    light.intensity = 55 * boost;
-    // Slight warm shift during the pose for a subtle hero-light feel
-    if (elapsed >= POSE_START && elapsed < POSE_END) {
+      boost = 1 + 0.3 * Math.sin(p * Math.PI);
       light.color.setHex(0xffd9a8);
     } else {
       light.color.setHex(0xffe8d6);
     }
+    light.intensity = 55 * boost;
   });
   return (
     <spotLight
@@ -89,12 +98,11 @@ function BreathingKeyLight({ startTimeRef }) {
   );
 }
 
-function Scene({ outfit, walkStartTimeRef, onOutfitReady, onOutfitDone }) {
+function Scene({ texture, walkStartTimeRef, onOutfitDone }) {
   return (
     <>
       <color attach="background" args={['#0a0a0a']} />
       <fog attach="fog" args={['#0a0a0a', 8, 40]} />
-
       <ambientLight intensity={0.25} color="#1a1a1a" />
 
       <BreathingKeyLight startTimeRef={walkStartTimeRef} />
@@ -150,7 +158,6 @@ function Scene({ outfit, walkStartTimeRef, onOutfitReady, onOutfitDone }) {
 
       <Floor />
 
-      {/* Dust motes drifting through the spotlight pools — subconscious atmosphere */}
       <Sparkles
         count={25}
         scale={[4, 4, 18]}
@@ -161,11 +168,10 @@ function Scene({ outfit, walkStartTimeRef, onOutfitReady, onOutfitDone }) {
         color="#fff3d0"
       />
 
-      {outfit && (
+      {texture && (
         <OutfitModel
-          outfit={outfit}
+          texture={texture}
           startTimeRef={walkStartTimeRef}
-          onReady={onOutfitReady}
           onDone={onOutfitDone}
         />
       )}
@@ -173,14 +179,92 @@ function Scene({ outfit, walkStartTimeRef, onOutfitReady, onOutfitDone }) {
   );
 }
 
+function VoteNowCard({ visible }) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: visible ? 1 : 0,
+        transition: 'opacity 0.4s ease',
+        pointerEvents: 'none',
+        zIndex: 6,
+      }}
+    >
+      <h1
+        style={{
+          margin: 0,
+          fontFamily: "'Playfair Display', serif",
+          fontSize: 'clamp(40px, 6vw, 64px)',
+          color: 'white',
+          textTransform: 'uppercase',
+          letterSpacing: '0.22em',
+          fontWeight: 400,
+        }}
+      >
+        Vote Now
+      </h1>
+    </div>
+  );
+}
+
+function ProgressDots({ count, currentIndex, visible }) {
+  if (count <= 0) return null;
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        bottom: '20px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        gap: '8px',
+        opacity: visible ? 0.75 : 0,
+        transition: 'opacity 0.3s ease',
+        pointerEvents: 'none',
+        zIndex: 8,
+      }}
+    >
+      {Array.from({ length: count }).map((_, i) => {
+        const isCurrent = i === currentIndex;
+        const isPast = i < currentIndex;
+        return (
+          <span
+            key={i}
+            style={{
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: isCurrent ? 'rgba(255, 255, 255, 0.95)' : isPast ? 'rgba(255, 255, 255, 0.5)' : 'rgba(255, 255, 255, 0.18)',
+              transition: 'background 0.3s ease',
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export default function RunwayShow({ outfits = [], theme = '', onComplete = () => {} }) {
-  const [ready, setReady] = useState(false);
+  // Per-outfit preloaded playlist: [{ outfit, texture }, ...]
+  const [playlist, setPlaylist] = useState(null);
+  const [preloadMessage, setPreloadMessage] = useState('Preparing the runway…');
   const [muted, setMuted] = useState(false);
+
+  // Sequencer phase: loading | preshow | walking | dark | voteNow | done
+  const [phase, setPhase] = useState('loading');
+  const [index, setIndex] = useState(0);
+
   const mutedRef = useRef(muted);
-  const showStartTimeRef = useRef(null);
-  const walkStartTimeRef = useRef(null);
+  const showStartTimeRef = useRef(null); // set when preshow begins, drives title card
+  const walkStartTimeRef = useRef(null); // set when each walk begins, drives OutfitModel / Flashes / BreathingKeyLight
   const ambientAudioRef = useRef(null);
   const onCompleteRef = useRef(onComplete);
+  const completeFiredRef = useRef(false);
+
   useEffect(() => {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
@@ -189,44 +273,123 @@ export default function RunwayShow({ outfits = [], theme = '', onComplete = () =
     if (ambientAudioRef.current) ambientAudioRef.current.muted = muted;
   }, [muted]);
 
-  // Stage 2: single outfit only — Stage 5 will sequence multiple.
-  const outfit = outfits[0];
+  const fireComplete = useCallback(() => {
+    if (completeFiredRef.current) return;
+    completeFiredRef.current = true;
+    onCompleteRef.current?.();
+  }, []);
 
-  // No outfit → skip the show entirely.
+  // --- Preload textures before the show starts ---
   useEffect(() => {
-    if (outfits.length > 0 && !outfits[0]?.tryOnImageUrl) {
-      onCompleteRef.current();
-      return;
+    let cancelled = false;
+    const valid = outfits.filter(o => o && o.tryOnImageUrl);
+    if (valid.length === 0) {
+      // Nothing to play — skip straight to voting.
+      fireComplete();
+      return () => {};
     }
-    if (outfits.length === 0) {
-      onCompleteRef.current();
-    }
+
+    const shuffled = shuffle(valid);
+
+    // If loading drags on, show a secondary message.
+    const slowMessageTimer = setTimeout(() => {
+      if (!cancelled) setPreloadMessage('Loading looks…');
+    }, 3_000);
+
+    const loader = new THREE.TextureLoader();
+    loader.setCrossOrigin('anonymous');
+
+    const loadOne = (outfit) =>
+      new Promise((resolve) => {
+        const timeoutId = setTimeout(() => {
+          console.warn('Outfit texture timed out:', outfit.tryOnImageUrl);
+          resolve({ outfit, texture: null });
+        }, TEXTURE_LOAD_TIMEOUT_MS);
+        loader.load(
+          outfit.tryOnImageUrl,
+          (tex) => {
+            clearTimeout(timeoutId);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.anisotropy = 8;
+            resolve({ outfit, texture: tex });
+          },
+          undefined,
+          (err) => {
+            clearTimeout(timeoutId);
+            console.warn('Outfit texture failed:', outfit.tryOnImageUrl, err);
+            resolve({ outfit, texture: null });
+          },
+        );
+      });
+
+    Promise.all(shuffled.map(loadOne)).then((results) => {
+      if (cancelled) return;
+      const playable = results.filter(r => r.texture);
+      if (playable.length === 0) {
+        fireComplete();
+        return;
+      }
+      setPlaylist(playable);
+    });
+
+    return () => {
+      cancelled = true;
+      clearTimeout(slowMessageTimer);
+    };
+    // Eslint-disable: we intentionally recompute only when outfits identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outfits]);
 
-  const handleOutfitReady = useCallback(() => {
-    if (showStartTimeRef.current) return;
-    const now = performance.now();
-    showStartTimeRef.current = now;
-    setReady(true);
-    // The actual walk starts after the pre-show title card finishes.
-    setTimeout(() => {
-      walkStartTimeRef.current = performance.now();
-    }, PRESHOW_DURATION * 1000);
-  }, []);
-
-  const handleOutfitDone = useCallback(() => {
-    onCompleteRef.current();
-  }, []);
-
-  // Ambient audio loop — starts when the show becomes ready, cleans up on unmount.
+  // --- Kick off the sequencer once the playlist is loaded ---
   useEffect(() => {
-    if (!ready) return;
+    if (!playlist || phase !== 'loading') return;
+    showStartTimeRef.current = performance.now();
+    setPhase('preshow');
+  }, [playlist, phase]);
+
+  // --- Phase transitions driven by setTimeout ---
+  useEffect(() => {
+    if (!playlist) return;
+    let timer;
+
+    if (phase === 'preshow') {
+      timer = setTimeout(() => {
+        walkStartTimeRef.current = performance.now();
+        setPhase('walking');
+      }, PRESHOW_DURATION * 1000);
+    } else if (phase === 'walking') {
+      timer = setTimeout(() => {
+        setPhase('dark');
+      }, WALK_PHASE_DURATION * 1000);
+    } else if (phase === 'dark') {
+      timer = setTimeout(() => {
+        if (index + 1 >= playlist.length) {
+          setPhase('voteNow');
+        } else {
+          setIndex(i => i + 1);
+          walkStartTimeRef.current = performance.now();
+          setPhase('walking');
+        }
+      }, DARK_PHASE_DURATION * 1000);
+    } else if (phase === 'voteNow') {
+      timer = setTimeout(() => {
+        setPhase('done');
+        fireComplete();
+      }, VOTE_NOW_DURATION * 1000);
+    }
+
+    return () => timer && clearTimeout(timer);
+  }, [phase, index, playlist, fireComplete]);
+
+  // --- Ambient audio lifecycle (starts with preshow) ---
+  useEffect(() => {
+    if (phase === 'loading' || phase === 'done') return;
+    if (ambientAudioRef.current) return;
     const audio = new Audio(AMBIENT_AUDIO_SRC);
     audio.loop = true;
     audio.volume = 0.3;
     audio.muted = mutedRef.current;
     audio.play().catch((err) => {
-      // Expected when browsers block autoplay or the file is missing.
       console.warn('Runway ambient audio did not start:', err?.message || err);
     });
     ambientAudioRef.current = audio;
@@ -235,9 +398,8 @@ export default function RunwayShow({ outfits = [], theme = '', onComplete = () =
       audio.src = '';
       ambientAudioRef.current = null;
     };
-  }, [ready]);
+  }, [phase]);
 
-  // Shutter sound per camera flash. Fresh Audio() each time so rapid flashes can overlap.
   const playShutter = useCallback(() => {
     if (mutedRef.current) return;
     try {
@@ -246,14 +408,16 @@ export default function RunwayShow({ outfits = [], theme = '', onComplete = () =
       const p = audio.play();
       if (p && typeof p.catch === 'function') p.catch(() => {});
     } catch {
-      /* ignored — audio is non-critical */
+      /* ignored */
     }
   }, []);
 
-  // Start the walk-clock offset for anyone reading it before the timeout resolves.
-  // Flashes/OutfitModel will simply wait until walkStartTimeRef is populated.
-
-  if (!outfit) return null;
+  // --- Render ---
+  const current = playlist?.[index];
+  const isLoading = phase === 'loading';
+  const isDark = phase === 'dark';
+  const showingFlashes = phase === 'walking';
+  const showingOverlays = phase !== 'loading' && phase !== 'done';
 
   return (
     <div
@@ -273,15 +437,18 @@ export default function RunwayShow({ outfits = [], theme = '', onComplete = () =
       >
         <Suspense fallback={null}>
           <Scene
-            outfit={outfit}
+            // Render a fresh OutfitModel per outfit so animation state resets cleanly.
+            key={`outfit-${index}-${phase === 'walking' ? 'live' : 'idle'}`}
+            texture={phase === 'walking' && current ? current.texture : null}
             walkStartTimeRef={walkStartTimeRef}
-            onOutfitReady={handleOutfitReady}
-            onOutfitDone={handleOutfitDone}
+            onOutfitDone={() => {
+              // WALK_PHASE_DURATION setTimeout also advances the phase; this callback
+              // is defensive in case the wall-clock elapses slightly earlier.
+            }}
           />
         </Suspense>
       </Canvas>
 
-      {/* Vignette — focuses attention centre-frame */}
       <div
         style={{
           position: 'absolute',
@@ -293,22 +460,46 @@ export default function RunwayShow({ outfits = [], theme = '', onComplete = () =
         }}
       />
 
-      {/* Camera flashes (DOM overlay; driven by the same clock as the walk) */}
-      {ready && <Flashes startTimeRef={walkStartTimeRef} onShutter={playShutter} />}
+      {/* Dark transition: soft fade-to-black between outfits */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: '#0a0a0a',
+          opacity: isDark ? 0.85 : 0,
+          transition: 'opacity 0.4s ease',
+          pointerEvents: 'none',
+          zIndex: 1,
+        }}
+      />
 
-      {/* Typography — title card + per-outfit info */}
-      {ready && (
+      {showingFlashes && current && (
+        <Flashes
+          key={`flashes-${index}`}
+          startTimeRef={walkStartTimeRef}
+          onShutter={playShutter}
+        />
+      )}
+
+      {showingOverlays && current && (
         <RunwayOverlays
           showStartTimeRef={showStartTimeRef}
           walkStartTimeRef={walkStartTimeRef}
           theme={theme}
-          outfit={outfit}
-          outfitCount={outfits.length}
+          outfit={phase === 'walking' ? current.outfit : null}
+          outfitCount={playlist?.length || 0}
         />
       )}
 
-      {/* Mute toggle */}
-      {ready && (
+      <VoteNowCard visible={phase === 'voteNow'} />
+
+      <ProgressDots
+        count={playlist?.length || 0}
+        currentIndex={index}
+        visible={phase === 'walking' || phase === 'dark' || phase === 'voteNow'}
+      />
+
+      {!isLoading && (
         <button
           type="button"
           onClick={() => setMuted((m) => !m)}
@@ -347,11 +538,10 @@ export default function RunwayShow({ outfits = [], theme = '', onComplete = () =
         </button>
       )}
 
-      {/* Skip */}
-      {ready && (
+      {!isLoading && (
         <button
           type="button"
-          onClick={() => onCompleteRef.current()}
+          onClick={fireComplete}
           style={{
             position: 'absolute',
             bottom: '20px',
@@ -373,7 +563,7 @@ export default function RunwayShow({ outfits = [], theme = '', onComplete = () =
         </button>
       )}
 
-      {!ready && <Preloader />}
+      {isLoading && <Preloader message={preloadMessage} />}
     </div>
   );
 }

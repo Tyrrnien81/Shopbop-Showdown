@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo } from 'react';
+import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -17,52 +17,9 @@ function easeInOutCubic(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
-export default function OutfitModel({ outfit, startTimeRef, onReady, onDone }) {
-  const [texture, setTexture] = useState(null);
-  const [loadError, setLoadError] = useState(false);
-
-  // Load texture manually (not via Suspense) so we can surface load events to the parent
-  // for the preloader handoff without blocking the Canvas tree.
-  useEffect(() => {
-    if (!outfit?.tryOnImageUrl) {
-      onReady?.();
-      return () => {};
-    }
-    let cancelled = false;
-    const loader = new THREE.TextureLoader();
-    loader.setCrossOrigin('anonymous');
-    const timeoutId = setTimeout(() => {
-      if (cancelled) return;
-      console.warn('Outfit texture load timed out:', outfit.tryOnImageUrl);
-      setLoadError(true);
-      onReady?.();
-    }, 10_000);
-
-    loader.load(
-      outfit.tryOnImageUrl,
-      (tex) => {
-        if (cancelled) return;
-        clearTimeout(timeoutId);
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.anisotropy = 8;
-        setTexture(tex);
-        onReady?.();
-      },
-      undefined,
-      (err) => {
-        if (cancelled) return;
-        clearTimeout(timeoutId);
-        console.error('Failed to load outfit texture:', err);
-        setLoadError(true);
-        onReady?.();
-      },
-    );
-    return () => {
-      cancelled = true;
-      clearTimeout(timeoutId);
-    };
-  }, [outfit?.tryOnImageUrl, onReady]);
-
+// Accepts a pre-loaded THREE.Texture from the parent (so the orchestrator can
+// preload every outfit before the show starts and we never mid-show-stall).
+export default function OutfitModel({ texture, startTimeRef, onDone }) {
   const [planeWidth, planeHeight] = useMemo(() => {
     if (!texture?.image) return [PLANE_HEIGHT * (2 / 3), PLANE_HEIGHT];
     const aspect = texture.image.width / texture.image.height;
@@ -139,7 +96,7 @@ export default function OutfitModel({ outfit, startTimeRef, onReady, onDone }) {
     }
   });
 
-  if (!texture || loadError) return null;
+  if (!texture) return null;
 
   return (
     <>
