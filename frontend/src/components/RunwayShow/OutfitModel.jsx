@@ -108,7 +108,7 @@ export default function OutfitModel({ texture, startTimeRef, onDone }) {
           transparent
           opacity={0}
           toneMapped={false}
-          alphaTest={0.02}
+          alphaTest={0.5}
           side={THREE.DoubleSide}
         />
       </mesh>
@@ -121,6 +121,7 @@ export default function OutfitModel({ texture, startTimeRef, onDone }) {
           opacity={0}
           depthWrite={false}
           toneMapped={false}
+          alphaTest={0.05}
           side={THREE.DoubleSide}
         />
       </mesh>
