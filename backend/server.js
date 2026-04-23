@@ -56,6 +56,32 @@ async function uploadTryOnImageToS3(gameId, playerId, tryOnImage) {
   }
 }
 
+// Resolves the best available image URL for an outfit. S3 wins when present;
+// otherwise fall back to the in-memory cache served via /api/tryon/image/:outfitId.
+// Returned URL is absolute so <img> and THREE.TextureLoader resolve it correctly
+// regardless of the frontend origin.
+function resolveTryOnImageUrl(req, outfit) {
+  if (outfit.tryOnImageUrl) return outfit.tryOnImageUrl;
+  if (tryOnImageCache.has(outfit.outfitId)) {
+    const host = req.get('host');
+    return `${req.protocol}://${host}/api/tryon/image/${outfit.outfitId}`;
+  }
+  return null;
+}
+
+// Parses cached try-on values (either raw base64 or a full data URL) into bytes + mime.
+function decodeCachedTryOnImage(cached) {
+  if (typeof cached !== 'string') return null;
+  const match = cached.match(/^data:(.+?);base64,(.+)$/);
+  const mimeType = match ? match[1] : 'image/png';
+  const data = match ? match[2] : cached;
+  try {
+    return { buffer: Buffer.from(data, 'base64'), mimeType };
+  } catch {
+    return null;
+  }
+}
+
 // In-memory cache for theme voting (ephemeral, no need for DB)
 const themeVoteCache = new Map(); // gameId -> { options: [...], votes: { playerId: themeId }, timer }
 
@@ -1111,7 +1137,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           playerId: outfit.playerId,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
-          tryOnImageUrl: outfit.tryOnImageUrl || null,
+          tryOnImageUrl: resolveTryOnImageUrl(req, outfit),
           tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
         });
       } else {
@@ -1123,7 +1149,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           playerName: player?.username,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
-          tryOnImageUrl: outfit.tryOnImageUrl || null,
+          tryOnImageUrl: resolveTryOnImageUrl(req, outfit),
           tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
         });
       }
@@ -1306,7 +1332,7 @@ app.get('/api/games/:gameId/results', async (req, res) => {
         totalVotes: count,
         products: outfit.products,
         totalPrice: outfit.totalPrice,
-        tryOnImageUrl: outfit.tryOnImageUrl || null,
+        tryOnImageUrl: resolveTryOnImageUrl(req, outfit),
         tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
       };
     });
@@ -1643,6 +1669,21 @@ async function invokeTryonLambda(products, productImages, variation, userPhoto) 
 }
 
 // POST /api/tryon/generate — generate 3 try-on images
+// GET /api/tryon/image/:outfitId — serves the base64 image from the in-memory
+// cache as a real image response (Content-Type: image/png). Used when S3 is
+// not configured; the outfits/results endpoints point tryOnImageUrl here.
+app.get('/api/tryon/image/:outfitId', (req, res) => {
+  const cached = tryOnImageCache.get(req.params.outfitId);
+  if (!cached) return res.status(404).json({ error: 'Image not found' });
+
+  const decoded = decodeCachedTryOnImage(cached);
+  if (!decoded) return res.status(500).json({ error: 'Failed to decode cached image' });
+
+  res.setHeader('Content-Type', decoded.mimeType);
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.send(decoded.buffer);
+});
+
 app.post('/api/tryon/generate', async (req, res) => {
   // Block only if neither local key nor Lambda is available
   if (!GEMINI_API_KEY && !TRYON_LAMBDA_NAME) {
