@@ -65,7 +65,19 @@ function AppContent() {
             path="/runway-test"
             element={
               <Suspense fallback={<div style={{ height: '100vh', background: '#0a0a0a' }} />}>
-                <RunwayShow outfits={[]} theme="" onComplete={() => {}} />
+                <RunwayShow
+                  outfits={[
+                    {
+                      tryOnImageUrl: 'https://picsum.photos/seed/runway-test/600/900',
+                      playerName: 'Test Model',
+                      totalCost: 1240,
+                      itemCount: 5,
+                      playerId: 'test-1',
+                    },
+                  ]}
+                  theme="Runway Ready"
+                  onComplete={() => console.log('Runway test complete')}
+                />
               </Suspense>
             }
           />
