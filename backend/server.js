@@ -248,6 +248,44 @@ function getCategories(dept) {
 // SHOPBOP API PROXY HELPERS
 // ============================================================
 
+// ---------- Shopbop proxy resilience ----------
+// Shopbop is an external dependency we don't control; if it blips during a
+// demo, product browsing goes dark. Defences layered here:
+//   1. In-memory Map cache keyed by the full request URL, 10-minute TTL.
+//      Successful, non-empty responses are cached.
+//   2. 10-second request timeout via AbortController (so a hanging upstream
+//      can't tie up an Express worker).
+//   3. Single retry after a 1-second wait on 5xx or timeout.
+//   4. If both attempts fail and a stale cache entry exists, we return it
+//      with _cached / _stale flags set rather than surfacing an error.
+const shopbopCache = new Map(); // key: full URL string -> { data, timestamp }
+const SHOPBOP_CACHE_TTL_MS = 10 * 60 * 1000;
+const SHOPBOP_TIMEOUT_MS = 10_000;
+const SHOPBOP_RETRY_DELAY_MS = 1000;
+
+function _resetShopbopCache() {
+  shopbopCache.clear();
+}
+
+function shopbopResponseIsEmpty(data) {
+  if (!data || typeof data !== 'object') return true;
+  const count =
+    (Array.isArray(data.products) ? data.products.length : 0) +
+    (Array.isArray(data.results) ? data.results.length : 0) +
+    (Array.isArray(data.items) ? data.items.length : 0);
+  return count === 0;
+}
+
+function shopbopShouldRetry(err) {
+  if (err?.name === 'AbortError') return true;
+  const status = err?.status;
+  return typeof status === 'number' && status >= 500 && status < 600;
+}
+
+function sleepMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function shopbopFetch(path, params = {}) {
   const url = new URL(`${SHOPBOP_API_BASE}${path}`);
   // Always include required params per Shopbop API docs
@@ -255,7 +293,16 @@ async function shopbopFetch(path, params = {}) {
   Object.entries({ ...defaults, ...params }).forEach(([k, v]) => {
     if (v != null && v !== '') url.searchParams.set(k, String(v));
   });
-  console.log('Shopbop URL:', url.toString());
+  const cacheKey = url.toString();
+  const now = Date.now();
+
+  // Fresh cache hit — skip the network entirely.
+  const cached = shopbopCache.get(cacheKey);
+  if (cached && now - cached.timestamp < SHOPBOP_CACHE_TTL_MS) {
+    return { ...cached.data, _cached: true, _stale: false };
+  }
+
+  console.log('Shopbop URL:', cacheKey);
 
   const headers = {
     'accept': 'application/json',
@@ -266,12 +313,58 @@ async function shopbopFetch(path, params = {}) {
     headers['x-api-key'] = process.env.SHOPBOP_API_KEY;
   }
 
-  const res = await fetch(url.toString(), { headers });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Shopbop API ${res.status}: ${text.slice(0, 200)}`);
+  async function attempt() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SHOPBOP_TIMEOUT_MS);
+    try {
+      const res = await fetch(cacheKey, { headers, signal: controller.signal });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        const err = new Error(`Shopbop API ${res.status}: ${text.slice(0, 200)}`);
+        err.status = res.status;
+        throw err;
+      }
+      return await res.json();
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
-  return res.json();
+
+  function serveStaleOrThrow(err) {
+    if (cached) {
+      console.warn(`Shopbop fetch failed (${err.message}); serving stale cache for ${cacheKey}`);
+      return { ...cached.data, _cached: true, _stale: true };
+    }
+    throw err;
+  }
+
+  let firstError;
+  try {
+    const data = await attempt();
+    if (!shopbopResponseIsEmpty(data)) {
+      shopbopCache.set(cacheKey, { data, timestamp: now });
+    }
+    return data;
+  } catch (err) {
+    firstError = err;
+    if (!shopbopShouldRetry(err)) {
+      return serveStaleOrThrow(err);
+    }
+    console.warn(`Shopbop fetch attempt 1 failed (${err.message}); retrying in ${SHOPBOP_RETRY_DELAY_MS}ms`);
+  }
+
+  await sleepMs(SHOPBOP_RETRY_DELAY_MS);
+
+  try {
+    const data = await attempt();
+    if (!shopbopResponseIsEmpty(data)) {
+      shopbopCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    return data;
+  } catch (err2) {
+    console.warn(`Shopbop fetch retry failed (${err2.message})`);
+    return serveStaleOrThrow(err2 || firstError);
+  }
 }
 
 // Normalize image URL — Shopbop may return relative paths
@@ -1745,4 +1838,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, server };
+module.exports = { app, server, _resetShopbopCache };
