@@ -40,6 +40,65 @@ const mockOutfits = [
   },
 ];
 
+function VotingControls({ votingTimeLeft, isHost, onEndVoting, disabled }) {
+  if (votingTimeLeft === null && !isHost) return null;
+  const mm = votingTimeLeft !== null ? Math.floor(votingTimeLeft / 60) : 0;
+  const ss = votingTimeLeft !== null ? votingTimeLeft % 60 : 0;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: '12px',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: '12px',
+        flexWrap: 'wrap',
+      }}
+    >
+      {votingTimeLeft !== null && (
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 14px',
+            borderRadius: '999px',
+            background: votingTimeLeft <= 10 ? 'rgba(221, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.12)',
+            color: votingTimeLeft <= 10 ? '#DD0000' : 'inherit',
+            fontSize: '13px',
+            fontWeight: 600,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+          }}
+        >
+          Voting closes in {String(mm).padStart(2, '0')}:{String(ss).padStart(2, '0')}
+        </div>
+      )}
+      {isHost && (
+        <button
+          onClick={onEndVoting}
+          disabled={disabled}
+          style={{
+            padding: '6px 14px',
+            borderRadius: '999px',
+            border: '1px solid currentColor',
+            background: 'transparent',
+            color: 'inherit',
+            fontSize: '13px',
+            fontWeight: 600,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            cursor: disabled ? 'wait' : 'pointer',
+            opacity: disabled ? 0.6 : 1,
+          }}
+        >
+          {disabled ? 'Ending…' : 'End Voting Early'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Voting() {
   const { gameId } = useParams();
   const navigate = useNavigate();
@@ -78,6 +137,8 @@ function Voting() {
   // Shared state
   const [votingComplete, setVotingComplete] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
+  const [votingTimeLeft, setVotingTimeLeft] = useState(null);
+  const [endVotingPending, setEndVotingPending] = useState(false);
   const [voteStatus, setVoteStatus] = useState({ voted: 0, total: 0, players: [] });
 
   // Initialize rankedOutfits when outfits load (ranking mode)
@@ -148,9 +209,35 @@ function Voting() {
     const onVoteSubmitted = ({ isComplete }) => {
       if (isComplete) setVotingComplete(true);
     };
+    const onVotingTimer = ({ remaining }) => {
+      setVotingTimeLeft(typeof remaining === 'number' ? remaining : null);
+    };
+    const onGameCompleted = () => {
+      setVotingComplete(true);
+      navigate(`/results/${gameId}`);
+    };
     socketService.on('vote-submitted', onVoteSubmitted);
-    return () => socketService.off('vote-submitted', onVoteSubmitted);
-  }, [gameId]);
+    socketService.on('voting-timer', onVotingTimer);
+    socketService.on('game-completed', onGameCompleted);
+    return () => {
+      socketService.off('vote-submitted', onVoteSubmitted);
+      socketService.off('voting-timer', onVotingTimer);
+      socketService.off('game-completed', onGameCompleted);
+    };
+  }, [gameId, navigate]);
+
+  const handleEndVoting = async () => {
+    if (endVotingPending) return;
+    if (!window.confirm('End voting now? Any players who haven\'t voted will be skipped.')) return;
+    setEndVotingPending(true);
+    try {
+      await gameApi.endVoting(gameId, currentPlayer?.playerId);
+      // navigation happens via the game-completed socket event
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to end voting');
+      setEndVotingPending(false);
+    }
+  };
 
   const handleGoBack = () => navigate(`/game/${gameId}`);
 
@@ -406,6 +493,12 @@ function Voting() {
               Go Back & Edit ({Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')} left)
             </button>
           )}
+          <VotingControls
+            votingTimeLeft={votingTimeLeft}
+            isHost={currentPlayer?.isHost}
+            onEndVoting={handleEndVoting}
+            disabled={endVotingPending}
+          />
         </header>
 
         {/* Live Voting Tracker */}
@@ -591,6 +684,12 @@ function Voting() {
             Go Back & Edit ({Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')} left)
           </button>
         )}
+        <VotingControls
+          votingTimeLeft={votingTimeLeft}
+          isHost={currentPlayer?.isHost}
+          onEndVoting={handleEndVoting}
+          disabled={endVotingPending}
+        />
       </header>
 
       {/* Live Voting Tracker */}

@@ -22,6 +22,7 @@ describe('Game start endpoint', () => {
       status: 'LOBBY',
       timeLimit: 300,
       singlePlayer: true,
+      hostPlayerId: 'host-1',
     });
     db.updateGameStatus.mockResolvedValue({
       gameId: 'ABC123',
@@ -32,7 +33,7 @@ describe('Game start endpoint', () => {
 
     const res = await request(app)
       .post('/api/games/ABC123/start')
-      .send({});
+      .send({ playerId: 'host-1' });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);

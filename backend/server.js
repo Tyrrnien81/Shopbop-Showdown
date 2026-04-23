@@ -59,6 +59,59 @@ async function uploadTryOnImageToS3(gameId, playerId, tryOnImage) {
 // In-memory cache for theme voting (ephemeral, no need for DB)
 const themeVoteCache = new Map(); // gameId -> { options: [...], votes: { playerId: themeId }, timer }
 
+// Voting-phase timeout (safety net so a missing voter can't hang the game forever)
+// gameId -> { expiresAt, intervalRef, finalized }
+const votingTimerCache = new Map();
+const VOTING_DURATION_SECONDS = 60;
+
+function clearVotingTimer(gameId) {
+  const entry = votingTimerCache.get(gameId);
+  if (!entry) return;
+  if (entry.intervalRef) clearInterval(entry.intervalRef);
+  votingTimerCache.delete(gameId);
+}
+
+function startVotingTimer(gameId) {
+  // Safety: clear any prior timer for this game before starting a new one
+  clearVotingTimer(gameId);
+  const expiresAt = Date.now() + VOTING_DURATION_SECONDS * 1000;
+
+  const tick = () => {
+    const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+    if (io) io.to(gameId).emit('voting-timer', { gameId, remaining });
+    if (remaining <= 0) {
+      clearVotingTimer(gameId);
+      finalizeVoting(gameId, 'timeout').catch((err) => {
+        console.error(`Voting timeout finalize failed for ${gameId}:`, err.message);
+      });
+    }
+  };
+
+  const intervalRef = setInterval(tick, 1000);
+  votingTimerCache.set(gameId, { expiresAt, intervalRef, finalized: false });
+  tick(); // emit the initial countdown value immediately
+}
+
+async function finalizeVoting(gameId, reason) {
+  const entry = votingTimerCache.get(gameId);
+  if (entry?.finalized) return;
+  if (entry) entry.finalized = true;
+  clearVotingTimer(gameId);
+
+  try {
+    const game = await db.getGame(gameId);
+    if (!game) return;
+    if (game.status !== 'COMPLETED') {
+      await db.updateGameStatus(gameId, 'COMPLETED', { endedAt: new Date().toISOString() });
+    }
+  } catch (err) {
+    console.error(`finalizeVoting DB error (${gameId}):`, err.message);
+  }
+
+  if (io) io.to(gameId).emit('game-completed', { gameId, reason });
+  console.log(`Game ${gameId} completed (${reason})`);
+}
+
 const ALL_THEMES = [
   { id: 'runway', name: 'Runway Ready', description: 'High-fashion editorial looks.', icon: '✨' },
   { id: 'trend', name: '2026 Trend Watch', description: 'The latest silhouettes and textures.', icon: '⚡' },
@@ -737,9 +790,13 @@ app.post('/api/games/:gameId/ready', async (req, res) => {
 // POST /api/games/:gameId/start — start the game (host only)
 app.post('/api/games/:gameId/start', async (req, res) => {
   try {
+    const { playerId } = req.body || {};
     const game = await db.getGame(req.params.gameId);
     if (!game) return res.status(404).json({ error: 'Game not found' });
     if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game already started' });
+    if (!playerId || playerId !== game.hostPlayerId) {
+      return res.status(403).json({ error: 'Only the host can start the game' });
+    }
 
     // Solo mode or host-pick mode: skip theme voting, go straight to PLAYING
     if (game.singlePlayer || game.themeMode === 'pick') {
@@ -930,6 +987,7 @@ app.post('/api/outfits', async (req, res) => {
         await db.updateGameStatus(gameId, 'VOTING');
         newStatus = 'VOTING';
         console.log(`Game ${gameId} moved to VOTING phase`);
+        startVotingTimer(gameId);
       }
     }
 
@@ -1042,10 +1100,7 @@ app.post('/api/votes', async (req, res) => {
     const votesRemaining = gamePlayers.filter(p => !p.hasVoted).length;
 
     if (votesRemaining === 0) {
-      await db.updateGameStatus(gameId, 'COMPLETED', {
-        endedAt: new Date().toISOString(),
-      });
-      console.log(`Game ${gameId} completed`);
+      await finalizeVoting(gameId, 'all-voted');
     }
 
     // Notify all clients in the room
@@ -1055,6 +1110,31 @@ app.post('/api/votes', async (req, res) => {
   } catch (err) {
     console.error('Submit votes error:', err.message);
     res.status(500).json({ error: 'Failed to submit votes' });
+  }
+});
+
+// POST /api/games/:gameId/end-voting — host force-completes the voting phase
+app.post('/api/games/:gameId/end-voting', async (req, res) => {
+  try {
+    const { playerId } = req.body || {};
+    const gameId = req.params.gameId;
+    const game = await db.getGame(gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+    if (!playerId || playerId !== game.hostPlayerId) {
+      return res.status(403).json({ error: 'Only the host can end voting' });
+    }
+    if (game.status === 'COMPLETED') {
+      return res.json({ success: true, alreadyCompleted: true });
+    }
+    if (game.status !== 'VOTING') {
+      return res.status(400).json({ error: 'Game is not in voting phase' });
+    }
+
+    await finalizeVoting(gameId, 'host-ended');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('End voting error:', err.message);
+    res.status(500).json({ error: 'Failed to end voting' });
   }
 });
 
