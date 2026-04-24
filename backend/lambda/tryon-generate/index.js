@@ -68,9 +68,11 @@ CRITICAL REQUIREMENTS:
 - The model MUST wear items that match the EXACT colors, patterns, and styles shown in the product images
 - Combine all items into one cohesive outfit on the model
 - The model should be ${variationPrompts[variation % variationPrompts.length]}
-- Full-body shot, professional fashion photography style
+- FULL BODY VISIBLE: The entire person must be in frame — crown of head and hair at the top, feet at the bottom. Do NOT crop the head, face, or feet under any circumstances.
+- The face and hair must be fully visible at the top of the image
+- Professional fashion photography style, shot from a distance sufficient to show the complete figure
 - Clean white or neutral studio background
-- All items must be clearly visible
+- All clothing items must be clearly visible
 - Photorealistic, high resolution`
     : `Look at these product images I'm providing. Generate a high-quality fashion photograph of a model wearing ALL of these EXACT items together as an outfit.
 
@@ -81,9 +83,11 @@ CRITICAL REQUIREMENTS:
 - The model MUST wear items that match the EXACT colors, patterns, and styles shown in the reference images
 - Combine all items into one cohesive outfit on a single model
 - The model should be ${variationPrompts[variation % variationPrompts.length]}
-- Full-body shot, professional fashion photography style
+- FULL BODY VISIBLE: The entire person must be in frame — crown of head and hair at the top, feet at the bottom. Do NOT crop the head, face, or feet under any circumstances.
+- The face and hair must be fully visible at the top of the image
+- Professional fashion photography style, shot from a distance sufficient to show the complete figure
 - Clean white or neutral studio background
-- All items must be clearly visible
+- All clothing items must be clearly visible
 - Photorealistic, high resolution`;
 
   parts.push({ text: prompt });

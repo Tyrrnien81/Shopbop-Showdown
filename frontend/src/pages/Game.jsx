@@ -83,6 +83,10 @@ function Game() {
 
   // Popup notification state
   const [popupMessage, setPopupMessage] = useState(null);
+  const [popupTitle, setPopupTitle] = useState(null);
+
+  const closePopup = () => { setPopupMessage(null); setPopupTitle(null); };
+  const showPopup = (title, body) => { setPopupTitle(title); setPopupMessage(body); };
 
   // Chat-featured products shown in main grid
   const [chatFeatured, setChatFeatured] = useState([]);
@@ -252,7 +256,7 @@ function Game() {
       } catch (err) {
         if (stale) return;
         console.error('Failed to load products:', err);
-        setPopupMessage('Could not load products from ShopBop');
+        showPopup('Connection Error', 'Could not load products from ShopBop. Check that the backend is running.');
       } finally {
         if (!stale) setLoadingProducts(false);
       }
@@ -447,7 +451,7 @@ function Game() {
 
   const handleSubmitOutfit = useCallback(async () => {
     if (currentOutfit.products.length < 3) {
-      setPopupMessage('Please add at least 3 items to your outfit before submitting.');
+      showPopup('Not Enough Items', 'Please add at least 3 items to your outfit before submitting.');
       return;
     }
 
@@ -471,7 +475,7 @@ function Game() {
         setHasSubmitted(true);
       }
     } catch {
-      setPopupMessage('Failed to submit outfit');
+      showPopup('Submission Error', 'Failed to submit outfit. Please try again.');
       // In solo mode, navigate to results even on error so user isn't stuck
       const { isSinglePlayer: solo } = useGameStore.getState();
       if (solo) {
@@ -540,7 +544,24 @@ function Game() {
       // Check mutual exclusion before adding
       const violation = wouldViolateMutualExclusion(product);
       if (violation) {
-        setPopupMessage(violation);
+        showPopup('Item Conflict', violation);
+        return;
+      }
+
+      // Check 5-item limit
+      if (currentOutfit.products.length >= 5) {
+        showPopup('Outfit Full', 'You can add at most 5 items. Remove one to swap it for something new.');
+        return;
+      }
+
+      // Check budget
+      const projected = currentOutfit.totalPrice + product.price;
+      if (game && projected > game.budget) {
+        const over = Math.ceil(projected - game.budget);
+        showPopup(
+          'Over Budget!',
+          `"${product.name}" costs $${product.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} but you only have $${budgetRemaining.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} left — that's $${over.toLocaleString()} over your $${budget.toLocaleString()} limit. Remove a pricier item or choose something more affordable.`
+        );
         return;
       }
 
@@ -566,6 +587,14 @@ function Game() {
   const budgetRemaining = budget - currentOutfit.totalPrice;
   const budgetPercentage = (currentOutfit.totalPrice / budget) * 100;
   const isOutfitComplete = validationErrors.length === 0 && currentOutfit.products.length > 0;
+
+  const budgetBarColor =
+    budgetPercentage >= 95 ? '#ef4444' :
+    budgetPercentage >= 80 ? '#f97316' :
+    budgetPercentage >= 60 ? '#f59e0b' :
+    '#22c55e';
+
+  const walletClass = `game-wallet${walletSpend ? ' spending' : ''}${budgetPercentage >= 95 ? ' budget-critical' : budgetPercentage >= 80 ? ' budget-warning' : ''}`;
 
   // Poll game status to detect phase changes (fallback if socket misses it)
   useEffect(() => {
@@ -744,7 +773,7 @@ function Game() {
           </span>
         </div>
 
-        <div className={`game-wallet${walletSpend ? ' spending' : ''}`}>
+        <div className={walletClass}>
           <span className="game-wallet-label">Wallet</span>
           <span className="game-wallet-value">
             <svg className="wallet-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -911,10 +940,12 @@ function Game() {
                 </button>
               </div>
               <div className="products-grid">
-                {chatFeatured.map((product) => (
+                {chatFeatured.map((product) => {
+                  const isOverBudget = !selectedProducts.has(product.productSin) && game?.budget != null && product.price > budgetRemaining;
+                  return (
                   <div
                     key={product.productSin}
-                    className={`product-card ${selectedProducts.has(product.productSin) ? 'selected' : ''}`}
+                    className={`product-card ${selectedProducts.has(product.productSin) ? 'selected' : ''} ${isOverBudget ? 'over-budget' : ''}`}
                     onClick={() => handleProductClick(product)}
                   >
                     <div className="product-image-container">
@@ -934,7 +965,8 @@ function Game() {
                       <span className="product-price">${product.price.toFixed(2)}</span>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -953,10 +985,12 @@ function Game() {
           <div className="products-grid">
             {products
               .filter(p => selectedCategory === 'All' || p.category === selectedCategory)
-              .map((product) => (
+              .map((product) => {
+                const isOverBudget = !selectedProducts.has(product.productSin) && game?.budget != null && product.price > budgetRemaining;
+                return (
               <div
                 key={product.productSin}
-                className={`product-card ${selectedProducts.has(product.productSin) ? 'selected' : ''}`}
+                className={`product-card ${selectedProducts.has(product.productSin) ? 'selected' : ''} ${isOverBudget ? 'over-budget' : ''}`}
                 onClick={() => handleProductClick(product)}
               >
                 <div className="product-image-container">
@@ -985,7 +1019,8 @@ function Game() {
                   </div>
                 </div>
               </div>
-            ))}
+                );
+              })}
           </div>
         </main>
 
@@ -1051,9 +1086,18 @@ function Game() {
             <div className="budget-bar">
               <div
                 className="budget-bar-fill"
-                style={{ width: `${Math.min(budgetPercentage, 100)}%` }}
+                style={{ width: `${Math.min(budgetPercentage, 100)}%`, background: budgetBarColor }}
               />
             </div>
+            {budgetPercentage >= 80 && (
+              <p className={`budget-status${budgetPercentage >= 95 ? ' critical' : ' warning'}`}>
+                {budgetPercentage >= 100
+                  ? 'Budget maxed out!'
+                  : budgetPercentage >= 95
+                  ? `Only $${Math.round(budgetRemaining).toLocaleString()} left!`
+                  : `$${Math.round(budgetRemaining).toLocaleString()} remaining`}
+              </p>
+            )}
             {!isOutfitComplete && validationErrors.length > 0 && (
               <div className="outfit-needs">
                 <span className="outfit-needs-label">Need:</span>
@@ -1455,10 +1499,14 @@ function Game() {
 
       {/* Popup notification */}
       {popupMessage && (
-        <div className="popup-overlay" onClick={() => setPopupMessage(null)}>
+        <div className="popup-overlay" onClick={closePopup}>
           <div className="popup-box" onClick={(e) => e.stopPropagation()}>
+            <div className="popup-icon">
+              {popupTitle === 'Over Budget!' ? '💸' : popupTitle === 'Outfit Full' ? '👗' : popupTitle === 'Item Conflict' ? '🚫' : '⚠️'}
+            </div>
+            {popupTitle && <h3 className="popup-title">{popupTitle}</h3>}
             <p>{popupMessage}</p>
-            <button className="btn btn-primary" onClick={() => setPopupMessage(null)}>
+            <button className="btn btn-primary" onClick={closePopup}>
               Got it
             </button>
           </div>
