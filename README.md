@@ -3,7 +3,8 @@
 University of Wisconsin–Madison — Computer Science Capstone – Spring 2026  
 Amazon / ShopBop Partnership
 
-**Repository:** https://github.com/Buman-Erdem/ShopBop-Showdown
+**Repository:** https://github.com/Buman-Erdem/ShopBop-Showdown  
+**Figma Prototype:** https://www.figma.com/make/RWUGQhyVSKv42Y8ibQWZB4/Webapp-prototype-for-gamified-fashion--Copy-?p=f
 
 ShopBop Showdown is a multiplayer fashion styling game that turns outfit creation into a competitive and social experience. Players build outfits using curated fashion products and compete to create the best look based on a theme, budget, and time limit.
 
