@@ -353,8 +353,16 @@ function Results() {
               {/* Player Info */}
               <div className="podium-player-name">{result.username}</div>
               <div className="podium-score">
-                <span className="star">{votingMode === 'ranking' ? '#' : '★'}</span>
-                <span>{result.score.toFixed(1)}</span>
+                {votingMode === 'ranking' ? (
+                  <><span className="star">#</span><span>{result.score.toFixed(1)}</span></>
+                ) : (
+                  <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+                    {[1, 2, 3, 4, 5].map(star => (
+                      <span key={star} style={{ fontSize: '1rem', color: star <= Math.round(result.score) ? 'var(--star-gold)' : 'rgba(255,255,255,0.2)' }}>★</span>
+                    ))}
+                    <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.6)', marginLeft: '4px' }}>{result.score.toFixed(1)}</span>
+                  </div>
+                )}
               </div>
 
               {/* Podium Bar */}
@@ -404,8 +412,16 @@ function Results() {
                     <div className="result-item-count">{result.products.length} items</div>
                   </div>
                   <div className="result-score">
-                    <span>{votingMode === 'ranking' ? '#' : '★'}</span>
-                    <span>{result.score.toFixed(1)}</span>
+                    {votingMode === 'ranking' ? (
+                      <><span>#</span><span>{result.score.toFixed(1)}</span></>
+                    ) : (
+                      <>
+                        {[1, 2, 3, 4, 5].map(star => (
+                          <span key={star} style={{ fontSize: '0.85rem', color: star <= Math.round(result.score) ? 'var(--star-gold)' : 'rgba(255,255,255,0.2)' }}>★</span>
+                        ))}
+                        <span style={{ fontSize: '0.8rem', marginLeft: '2px' }}>{result.score.toFixed(1)}</span>
+                      </>
+                    )}
                   </div>
                   <button className="view-items-btn-sm" onClick={() => toggleItems(result.outfitId)}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
