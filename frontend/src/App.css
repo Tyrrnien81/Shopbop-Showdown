@@ -5257,6 +5257,40 @@ input::placeholder {
     font-size: 1.4rem;
   }
 
+  .voting-player-name {
+    font-size: 1rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    padding: 0 16px;
+  }
+
+  .voting-player-stats {
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    font-size: 0.78rem;
+  }
+
+  .voting-side-item-cat,
+  .voting-side-item-price {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .rank-item-main {
+    gap: 6px;
+  }
+
+  .rank-outfit-details {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+
   .voting-navigation {
     gap: 16px;
   }
