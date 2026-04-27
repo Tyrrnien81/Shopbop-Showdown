@@ -79,6 +79,7 @@ function Voting() {
   const [votingComplete, setVotingComplete] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
   const [voteStatus, setVoteStatus] = useState({ voted: 0, total: 0, players: [] });
+  const [votingTimeLeft, setVotingTimeLeft] = useState(45);
 
   // Initialize rankedOutfits when outfits load (ranking mode)
   useEffect(() => {
@@ -151,6 +152,22 @@ function Voting() {
     socketService.on('vote-submitted', onVoteSubmitted);
     return () => socketService.off('vote-submitted', onVoteSubmitted);
   }, [gameId]);
+
+  // Voting countdown timer — auto-navigate to results when time runs out
+  useEffect(() => {
+    if (votingComplete) return;
+    const interval = setInterval(() => {
+      setVotingTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          navigate(`/results/${gameId}`);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [votingComplete, gameId, navigate]);
 
   const handleGoBack = () => navigate(`/game/${gameId}`);
 
@@ -405,6 +422,15 @@ function Voting() {
               Go Back & Edit ({Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')} left)
             </button>
           )}
+          <div style={{
+            marginTop: '10px',
+            fontSize: '0.85rem',
+            color: votingTimeLeft <= 10 ? '#ff6b6b' : 'rgba(255,255,255,0.6)',
+            fontWeight: votingTimeLeft <= 10 ? '700' : '400',
+            transition: 'color 0.3s',
+          }}>
+            ⏱ Results in {Math.floor(votingTimeLeft / 60)}:{String(votingTimeLeft % 60).padStart(2, '0')}
+          </div>
         </header>
 
         {/* Live Voting Tracker */}
@@ -590,6 +616,15 @@ function Voting() {
             Go Back & Edit ({Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')} left)
           </button>
         )}
+        <div style={{
+          marginTop: '10px',
+          fontSize: '0.85rem',
+          color: votingTimeLeft <= 10 ? '#ff6b6b' : 'rgba(255,255,255,0.6)',
+          fontWeight: votingTimeLeft <= 10 ? '700' : '400',
+          transition: 'color 0.3s',
+        }}>
+          ⏱ Results in {Math.floor(votingTimeLeft / 60)}:{String(votingTimeLeft % 60).padStart(2, '0')}
+        </div>
       </header>
 
       {/* Live Voting Tracker */}

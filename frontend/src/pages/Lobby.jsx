@@ -127,7 +127,12 @@ function Lobby() {
       setPlayers(joinedGame.players || []);
       setShowJoinForm(false);
     } catch (error) {
-      setError(error.response?.data?.error || 'Failed to join game');
+      const msg = error.response?.data?.error || 'Failed to join game';
+      if (msg === 'Game is full') {
+        setError('__GAME_FULL__');
+      } else {
+        setError(msg);
+      }
     } finally {
       setJoining(false);
     }
@@ -266,7 +271,39 @@ function Lobby() {
           <p style={{ color: 'var(--text-light)', fontSize: '0.8rem', marginTop: '12px' }}>
             Audience members can vote on outfits but don't create their own
           </p>
-          {error && <div className="error-message" style={{ marginTop: '16px' }}>{error}</div>}
+          {error && error !== '__GAME_FULL__' && (
+            <div className="error-message" style={{ marginTop: '16px' }}>{error}</div>
+          )}
+          {error === '__GAME_FULL__' && (
+            <div style={{
+              marginTop: '16px',
+              padding: '14px 18px',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, #fff8f0, #fff3e6)',
+              border: '1px solid var(--primary-orange)',
+              textAlign: 'center',
+            }}>
+              <div style={{ fontSize: '1.2rem', marginBottom: '4px' }}>🎭</div>
+              <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px', fontSize: '0.95rem' }}>
+                This room is full!
+              </div>
+              <div style={{ color: 'var(--text-light)', fontSize: '0.82rem', marginBottom: '12px' }}>
+                All player slots are taken — but you can still watch and vote on the outfits.
+              </div>
+              <button
+                onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim(), true)}
+                className="btn btn-primary"
+                disabled={joining || !joinUsername.trim()}
+                style={{ width: '100%' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                Join as Audience
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
