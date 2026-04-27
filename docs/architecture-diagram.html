@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ShopBop Showdown - Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #fff;
+    color: #000;
+    width: 1440px;
+    height: 900px;
+    overflow: hidden;
+  }
+  svg { display: block; }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 1440 860" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+      <path d="M0,0 L7,2.5 L0,5 Z" fill="#000"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
+      <path d="M0,0 L7,2.5 L0,5 Z" fill="#888"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="720" y="32" text-anchor="middle" font-size="22" font-weight="700" fill="#000">ShopBop Showdown — System Architecture</text>
+
+  <!-- ==================== CLIENT TIER ==================== -->
+  <rect x="430" y="52" width="530" height="80" rx="7" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="695" y="72" text-anchor="middle" font-size="13" font-weight="700">Browser (React 19 SPA)</text>
+  <line x1="448" y1="78" x2="942" y2="78" stroke="#ccc" stroke-width="1"/>
+  <text x="470" y="94" font-size="10" fill="#333">Vite + React Router v7 (11 pages)</text>
+  <text x="470" y="108" font-size="10" fill="#333">Zustand state + sessionStorage</text>
+  <text x="770" y="94" font-size="10" fill="#333">Axios (REST) + Socket.IO (WS)</text>
+  <text x="770" y="108" font-size="10" fill="#333">QR Code join (qrcode.react)</text>
+
+  <!-- Tier label -->
+  <text x="24" y="95" font-size="10" font-weight="700" fill="#888" transform="rotate(-90,24,95)" text-anchor="middle">CLIENT</text>
+
+  <!-- ==================== ARROWS: Client <-> Server ==================== -->
+  <line x1="600" y1="132" x2="600" y2="175" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="618" y1="175" x2="618" y2="132" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="548" y="158" font-size="9" fill="#555" font-weight="600">REST API</text>
+
+  <line x1="780" y1="132" x2="780" y2="175" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="798" y1="175" x2="798" y2="132" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="735" y="158" font-size="9" fill="#555" font-weight="600">WebSocket</text>
+
+  <!-- Dashed tier line -->
+  <line x1="50" y1="148" x2="1400" y2="148" stroke="#ddd" stroke-width="1" stroke-dasharray="5,3"/>
+
+  <!-- ==================== SERVER TIER ==================== -->
+  <rect x="300" y="175" width="800" height="130" rx="7" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="700" y="195" text-anchor="middle" font-size="13" font-weight="700">Express.js + Node.js Server (Render.com)</text>
+  <line x1="318" y1="201" x2="1082" y2="201" stroke="#ccc" stroke-width="1"/>
+
+  <!-- Sub-boxes -->
+  <rect x="318" y="208" width="230" height="86" rx="4" fill="#f5f5f5" stroke="#aaa" stroke-width="1"/>
+  <text x="433" y="224" text-anchor="middle" font-size="10" font-weight="700">23 REST Endpoints</text>
+  <text x="330" y="240" font-size="9" fill="#444">Games: create, join, start, ready</text>
+  <text x="330" y="253" font-size="9" fill="#444">Products: search, detail, categories</text>
+  <text x="330" y="266" font-size="9" fill="#444">Outfits: submit | Votes: results</text>
+  <text x="330" y="279" font-size="9" fill="#444">AI: try-on, chat, avatar</text>
+
+  <rect x="560" y="208" width="230" height="86" rx="4" fill="#f5f5f5" stroke="#aaa" stroke-width="1"/>
+  <text x="675" y="224" text-anchor="middle" font-size="10" font-weight="700">Socket.IO Server</text>
+  <text x="572" y="240" font-size="9" fill="#444">Room-based (per gameId)</text>
+  <text x="572" y="253" font-size="9" fill="#444">player-joined, game-started</text>
+  <text x="572" y="266" font-size="9" fill="#444">theme-vote-*, outfit-submitted</text>
+  <text x="572" y="279" font-size="9" fill="#444">vote-submitted</text>
+
+  <rect x="802" y="208" width="280" height="86" rx="4" fill="#f5f5f5" stroke="#aaa" stroke-width="1"/>
+  <text x="942" y="224" text-anchor="middle" font-size="10" font-weight="700">In-Memory Caches</text>
+  <text x="814" y="243" font-size="9" fill="#444">tryOnImageCache (outfitId → base64)</text>
+  <text x="814" y="258" font-size="9" fill="#444">themeVoteCache (gameId → votes)</text>
+  <text x="814" y="275" font-size="9" fill="#444">Ephemeral, per server instance</text>
+
+  <!-- Tier label -->
+  <text x="24" y="245" font-size="10" font-weight="700" fill="#888" transform="rotate(-90,24,245)" text-anchor="middle">SERVER</text>
+
+  <!-- Hosting label -->
+  <rect x="90" y="185" width="110" height="25" rx="4" fill="#fff" stroke="#000" stroke-width="1.5"/>
+  <text x="145" y="202" text-anchor="middle" font-size="9" font-weight="700">Render.com</text>
+  <line x1="200" y1="197" x2="300" y2="197" stroke="#888" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- ==================== ARROWS: Server -> Data ==================== -->
+  <line x1="433" y1="305" x2="433" y2="370" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="450" y1="370" x2="450" y2="305" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="460" y="342" font-size="9" fill="#555" font-weight="600">AWS SDK</text>
+
+  <line x1="675" y1="305" x2="675" y2="370" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="685" y="342" font-size="9" fill="#555" font-weight="600">Lambda Invoke</text>
+
+  <line x1="900" y1="305" x2="900" y2="370" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="918" y1="370" x2="918" y2="305" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="928" y="335" font-size="9" fill="#555" font-weight="600">HTTPS</text>
+
+  <line x1="1000" y1="305" x2="1140" y2="370" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="1158" y1="370" x2="1018" y2="305" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="1090" y="328" font-size="9" fill="#555" font-weight="600">HTTPS</text>
+
+  <!-- Dashed tier line -->
+  <line x1="50" y1="335" x2="1400" y2="335" stroke="#ddd" stroke-width="1" stroke-dasharray="5,3"/>
+
+  <!-- ==================== DATA / EXTERNAL TIER ==================== -->
+  <text x="24" y="425" font-size="10" font-weight="700" fill="#888" transform="rotate(-90,24,425)" text-anchor="middle">DATA / EXTERNAL</text>
+
+  <!-- AWS label -->
+  <rect x="90" y="378" width="110" height="25" rx="4" fill="#fff" stroke="#000" stroke-width="1.5"/>
+  <text x="145" y="395" text-anchor="middle" font-size="9" font-weight="700">AWS (us-east-1)</text>
+  <line x1="200" y1="390" x2="330" y2="390" stroke="#888" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- DynamoDB cylinder -->
+  <ellipse cx="442" cy="378" rx="105" ry="10" fill="#f5f5f5" stroke="#000" stroke-width="1.5"/>
+  <rect x="337" y="378" width="210" height="85" fill="#f5f5f5" stroke="#000" stroke-width="1.5"/>
+  <ellipse cx="442" cy="463" rx="105" ry="10" fill="#f5f5f5" stroke="#000" stroke-width="1.5"/>
+  <rect x="338" y="378" width="208" height="10" fill="#f5f5f5"/>
+  <text x="442" y="400" text-anchor="middle" font-size="11" font-weight="700">DynamoDB</text>
+  <text x="358" y="416" font-size="9" fill="#444">Games (gameId, status, theme)</text>
+  <text x="358" y="429" font-size="9" fill="#444">Players (playerId, GSI: gameId)</text>
+  <text x="358" y="442" font-size="9" fill="#444">Outfits (outfitId, products[])</text>
+  <text x="358" y="455" font-size="9" fill="#444">Votes (voteId, rating)</text>
+
+  <!-- Lambda -->
+  <rect x="610" y="370" width="170" height="70" rx="7" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="695" y="393" text-anchor="middle" font-size="11" font-weight="700">AWS Lambda</text>
+  <text x="695" y="407" text-anchor="middle" font-size="9" fill="#666">(optional)</text>
+  <text x="625" y="423" font-size="9" fill="#444">Try-on generation offload</text>
+  <text x="625" y="436" font-size="9" fill="#444">Node 20 | 512MB | 30s</text>
+
+  <!-- Lambda -> Gemini dashed -->
+  <line x1="780" y1="405" x2="840" y2="405" stroke="#888" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow-gray)"/>
+
+  <!-- Gemini -->
+  <rect x="840" y="370" width="170" height="70" rx="7" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="925" y="393" text-anchor="middle" font-size="11" font-weight="700">Google Gemini</text>
+  <text x="925" y="407" text-anchor="middle" font-size="9" fill="#666">2.5 Flash</text>
+  <text x="855" y="423" font-size="9" fill="#444">Virtual try-on (3 poses)</text>
+  <text x="855" y="436" font-size="9" fill="#444">Chat assistant + Avatar gen</text>
+
+  <!-- ShopBop -->
+  <rect x="1060" y="370" width="170" height="70" rx="7" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="1145" y="393" text-anchor="middle" font-size="11" font-weight="700">ShopBop API</text>
+  <text x="1075" y="412" font-size="9" fill="#444">Product search + detail</text>
+  <text x="1075" y="425" font-size="9" fill="#444">Categories catalog</text>
+  <text x="1075" y="438" font-size="9" fill="#444">api.shopbop.com/public/*</text>
+
+  <!-- ==================== GAME FLOW ==================== -->
+  <line x1="60" y1="500" x2="1400" y2="500" stroke="#000" stroke-width="1"/>
+  <text x="720" y="525" text-anchor="middle" font-size="13" font-weight="700">Game State Flow</text>
+
+  <rect x="200" y="540" width="130" height="42" rx="5" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="265" y="559" text-anchor="middle" font-size="11" font-weight="700">Lobby</text>
+  <text x="265" y="572" text-anchor="middle" font-size="8" fill="#777">Create / Join / Ready</text>
+
+  <line x1="330" y1="561" x2="380" y2="561" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="380" y="540" width="130" height="42" rx="5" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="445" y="559" text-anchor="middle" font-size="11" font-weight="700">Theme Vote</text>
+  <text x="445" y="572" text-anchor="middle" font-size="8" fill="#777">15s vote (optional)</text>
+
+  <line x1="510" y1="561" x2="560" y2="561" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="560" y="540" width="130" height="42" rx="5" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="625" y="559" text-anchor="middle" font-size="11" font-weight="700">Playing</text>
+  <text x="625" y="572" text-anchor="middle" font-size="8" fill="#777">Build outfit + try-on</text>
+
+  <line x1="690" y1="561" x2="740" y2="561" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="740" y="540" width="130" height="42" rx="5" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="805" y="559" text-anchor="middle" font-size="11" font-weight="700">Voting</text>
+  <text x="805" y="572" text-anchor="middle" font-size="8" fill="#777">Star / Ranking mode</text>
+
+  <line x1="870" y1="561" x2="920" y2="561" stroke="#000" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="920" y="540" width="130" height="42" rx="5" fill="#fff" stroke="#000" stroke-width="2"/>
+  <text x="985" y="559" text-anchor="middle" font-size="11" font-weight="700">Results</text>
+  <text x="985" y="572" text-anchor="middle" font-size="8" fill="#777">Scores + Leaderboard</text>
+
+</svg>
+</body>
+</html>
