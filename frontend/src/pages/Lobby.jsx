@@ -130,6 +130,10 @@ function Lobby() {
       const msg = error.response?.data?.error || 'Failed to join game';
       if (msg === 'Game is full') {
         setError('__GAME_FULL__');
+      } else if (msg === 'Game has already started') {
+        setError('__GAME_STARTED__');
+      } else if (msg === 'Game has already ended') {
+        setError('__GAME_ENDED__');
       } else {
         setError(msg);
       }
@@ -217,6 +221,7 @@ function Lobby() {
 
   // Join form for players arriving via direct link
   if (showJoinForm && !currentPlayer) {
+    const isBlocked = error === '__GAME_STARTED__' || error === '__GAME_ENDED__';
     return (
       <div className="lobby-container">
         <header className="lobby-header">
@@ -226,83 +231,133 @@ function Lobby() {
           </div>
         </header>
         <div style={{ maxWidth: '420px', margin: '40px auto', textAlign: 'center' }}>
-          <p style={{ color: 'var(--text-light)', marginBottom: '24px' }}>Enter your name to join the showdown</p>
-          <input
-            type="text"
-            placeholder="Your fashion name..."
-            value={joinUsername}
-            onChange={(e) => setJoinUsername(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && joinUsername.trim() && handleJoinGame(joinUsername.trim())}
-            style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-light)',
-              color: 'var(--text-primary)',
-              padding: '10px 16px',
-              borderRadius: '8px',
-              fontSize: '1rem',
-              width: '100%',
-              marginBottom: '16px',
-            }}
-          />
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-          {players.filter(p=> !p.isAudience).length < (game?.maxPlayers ?? 4) && (
-            <button 
-              onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim())}
-              className="btn btn-primary"
-              disabled={joining || !joinUsername.trim()}
-              style={{ flex: 1 }}
-            >
-              {joining ? 'Joining...' : 'Play'}
-            </button>
-          )}
-            <button
-              onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim(), true)}
-              className="btn btn-outline"
-              disabled={joining || !joinUsername.trim()}
-              style={{ flex: 1 }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-              Watch & Vote
-            </button>
-          </div>
-          <p style={{ color: 'var(--text-light)', fontSize: '0.8rem', marginTop: '12px' }}>
-            Audience members can vote on outfits but don't create their own
-          </p>
-          {error && error !== '__GAME_FULL__' && (
-            <div className="error-message" style={{ marginTop: '16px' }}>{error}</div>
-          )}
-          {error === '__GAME_FULL__' && (
+
+          {/* Game already started — block everyone */}
+          {error === '__GAME_STARTED__' && (
             <div style={{
-              marginTop: '16px',
-              padding: '14px 18px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, #fff8f0, #fff3e6)',
-              border: '1px solid var(--primary-orange)',
+              padding: '28px 24px',
+              borderRadius: '16px',
+              background: 'linear-gradient(135deg, #f0f4ff, #e8eeff)',
+              border: '1px solid #a0b0ff',
               textAlign: 'center',
             }}>
-              <div style={{ fontSize: '1.2rem', marginBottom: '4px' }}>🎭</div>
-              <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px', fontSize: '0.95rem' }}>
-                This room is full!
+              <div style={{ fontSize: '2.4rem', marginBottom: '10px' }}>🎮</div>
+              <div style={{ fontWeight: '700', color: 'var(--text-primary)', fontSize: '1.1rem', marginBottom: '8px' }}>
+                Game In Progress
               </div>
-              <div style={{ color: 'var(--text-light)', fontSize: '0.82rem', marginBottom: '12px' }}>
-                All player slots are taken — but you can still watch and vote on the outfits.
+              <div style={{ color: 'var(--text-light)', fontSize: '0.85rem', marginBottom: '20px' }}>
+                This showdown has already started. You can't join mid-game.
               </div>
-              <button
-                onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim(), true)}
-                className="btn btn-primary"
-                disabled={joining || !joinUsername.trim()}
-                style={{ width: '100%' }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-                Join as Audience
+              <button onClick={() => navigate('/')} className="btn btn-primary" style={{ width: '100%' }}>
+                Go Home
               </button>
             </div>
+          )}
+
+          {/* Game already ended */}
+          {error === '__GAME_ENDED__' && (
+            <div style={{
+              padding: '28px 24px',
+              borderRadius: '16px',
+              background: 'linear-gradient(135deg, #f5f5f5, #eeeeee)',
+              border: '1px solid var(--border-light)',
+              textAlign: 'center',
+            }}>
+              <div style={{ fontSize: '2.4rem', marginBottom: '10px' }}>🏁</div>
+              <div style={{ fontWeight: '700', color: 'var(--text-primary)', fontSize: '1.1rem', marginBottom: '8px' }}>
+                Game Has Ended
+              </div>
+              <div style={{ color: 'var(--text-light)', fontSize: '0.85rem', marginBottom: '20px' }}>
+                This showdown is over. Try joining another game!
+              </div>
+              <button onClick={() => navigate('/')} className="btn btn-primary" style={{ width: '100%' }}>
+                Go Home
+              </button>
+            </div>
+          )}
+
+          {/* Normal join form — hidden when game is blocked */}
+          {!isBlocked && (
+            <>
+              <p style={{ color: 'var(--text-light)', marginBottom: '24px' }}>Enter your name to join the showdown</p>
+              <input
+                type="text"
+                placeholder="Your fashion name..."
+                value={joinUsername}
+                onChange={(e) => setJoinUsername(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && joinUsername.trim() && handleJoinGame(joinUsername.trim())}
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-light)',
+                  color: 'var(--text-primary)',
+                  padding: '10px 16px',
+                  borderRadius: '8px',
+                  fontSize: '1rem',
+                  width: '100%',
+                  marginBottom: '16px',
+                }}
+              />
+              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+                {players.filter(p => !p.isAudience).length < (game?.maxPlayers ?? 4) && (
+                  <button
+                    onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim())}
+                    className="btn btn-primary"
+                    disabled={joining || !joinUsername.trim()}
+                    style={{ flex: 1 }}
+                  >
+                    {joining ? 'Joining...' : 'Play'}
+                  </button>
+                )}
+                <button
+                  onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim(), true)}
+                  className="btn btn-outline"
+                  disabled={joining || !joinUsername.trim()}
+                  style={{ flex: 1 }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  Watch & Vote
+                </button>
+              </div>
+              <p style={{ color: 'var(--text-light)', fontSize: '0.8rem', marginTop: '12px' }}>
+                Audience members can vote on outfits but don't create their own
+              </p>
+              {error && error !== '__GAME_FULL__' && (
+                <div className="error-message" style={{ marginTop: '16px' }}>{error}</div>
+              )}
+              {error === '__GAME_FULL__' && (
+                <div style={{
+                  marginTop: '16px',
+                  padding: '14px 18px',
+                  borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #fff8f0, #fff3e6)',
+                  border: '1px solid var(--primary-orange)',
+                  textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: '1.2rem', marginBottom: '4px' }}>🎭</div>
+                  <div style={{ fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px', fontSize: '0.95rem' }}>
+                    This room is full!
+                  </div>
+                  <div style={{ color: 'var(--text-light)', fontSize: '0.82rem', marginBottom: '12px' }}>
+                    All player slots are taken — but you can still watch and vote on the outfits.
+                  </div>
+                  <button
+                    onClick={() => joinUsername.trim() && handleJoinGame(joinUsername.trim(), true)}
+                    className="btn btn-primary"
+                    disabled={joining || !joinUsername.trim()}
+                    style={{ width: '100%' }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                    Join as Audience
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -376,7 +431,9 @@ function Lobby() {
       )}
 
 
-      {error && <div className="error-message">{error}</div>}
+      {error && !['__GAME_FULL__', '__GAME_STARTED__', '__GAME_ENDED__'].includes(error) && (
+        <div className="error-message">{error}</div>
+      )}
 
       {/* Game Info Cards */}
       {game && (
