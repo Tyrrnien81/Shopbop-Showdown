@@ -974,7 +974,7 @@ function Game() {
           {loadingProducts ? (
             <div className="loading" style={{ minHeight: '200px' }}>
               <div className="spinner"></div>
-              <p>Loading ShopBop catalog...</p>
+              <p>Loading Shopbop catalog...</p>
             </div>
           ) : products.length === 0 ? (
             <div style={{ textAlign: 'center', color: 'var(--text-light)', padding: '40px' }}>
