@@ -5477,7 +5477,7 @@ input::placeholder {
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(0, 0, 0, 0.7);
   letter-spacing: 0.05em;
   padding: 2px 0;
   text-underline-offset: 3px;
@@ -5491,7 +5491,7 @@ input::placeholder {
 }
 
 .home-secondary-divider {
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(0, 0, 0, 0.3);
   font-size: 0.8rem;
   user-select: none;
 }
