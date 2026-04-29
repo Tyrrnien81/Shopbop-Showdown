@@ -35,13 +35,13 @@ describe('Outfit endpoints', () => {
       outfits: [
         {
           outfitId: 'OUT1',
+          playerId: 'P1',
           products: [{ name: 'Dress' }],
           totalPrice: 120,
           tryOnImage: 'look.png',
         },
       ],
     });
-    expect(res.body.outfits[0].playerId).toBeUndefined();
     expect(res.body.outfits[0].playerName).toBeUndefined();
   });
 });

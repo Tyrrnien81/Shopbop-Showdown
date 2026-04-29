@@ -3,6 +3,7 @@ const request = require('supertest');
 jest.mock('../db', () => ({
   getGame: jest.fn(),
   getPlayer: jest.fn(),
+  getOutfitsByGameId: jest.fn(),
   createVote: jest.fn(),
   updatePlayer: jest.fn(),
 }));
@@ -22,6 +23,7 @@ describe('Vote endpoints', () => {
       gameId: 'ABC123',
       hasVoted: false,
     });
+    db.getOutfitsByGameId.mockResolvedValue([]);
 
     const res = await request(app)
       .post('/api/votes')
