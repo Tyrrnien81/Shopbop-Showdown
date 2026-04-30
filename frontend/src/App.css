@@ -3031,10 +3031,16 @@ input::placeholder {
   transition: all 0.2s ease;
 }
 
-.star-rating-star.active,
-.star-rating-star:hover {
+.star-rating-star.active {
   color: var(--star-gold);
   transform: scale(1.1);
+}
+
+@media (hover: hover) {
+  .star-rating-star:hover {
+    color: var(--star-gold);
+    transform: scale(1.1);
+  }
 }
 
 .star-rating-value {

@@ -835,10 +835,11 @@ app.post('/api/games/:gameId/join', async (req, res) => {
   try {
     const game = await db.getGame(req.params.gameId);
     if (!game) return res.status(404).json({ error: 'Game not found' });
-    if (game.status === 'COMPLETED') return res.status(400).json({ error: 'Game has already ended' });
-    if (game.status !== 'LOBBY' && !isAudience) return res.status(400).json({ error: 'Game has already started' });
 
     const { username, isAudience } = req.body;
+
+    if (game.status === 'COMPLETED') return res.status(400).json({ error: 'Game has already ended' });
+    if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game has already started' });
 
     // Audience doesn't count toward maxPlayers; contestants do
     if (!isAudience) {
@@ -1130,6 +1131,8 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
 
     const gameOutfits = [];
     for (const outfit of rawOutfits) {
+      const tryOnImageUrl = resolveTryOnImageUrl(req, outfit);
+      const tryOnImage = tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null;
       if (game.status === 'VOTING') {
         // Include playerId so frontend can filter own outfit, but no player name
         gameOutfits.push({
@@ -1137,8 +1140,8 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           playerId: outfit.playerId,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
-          tryOnImageUrl: resolveTryOnImageUrl(req, outfit),
-          tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
+          ...(tryOnImageUrl && { tryOnImageUrl }),
+          tryOnImage,
         });
       } else {
         // Include player info for completed games
@@ -1149,8 +1152,8 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           playerName: player?.username,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
-          tryOnImageUrl: resolveTryOnImageUrl(req, outfit),
-          tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
+          ...(tryOnImageUrl && { tryOnImageUrl }),
+          tryOnImage,
         });
       }
     }
@@ -1324,6 +1327,7 @@ app.get('/api/games/:gameId/results', async (req, res) => {
         score = count > 0 ? parseFloat((total / count).toFixed(1)) : 0;
       }
 
+      const tryOnImageUrl = resolveTryOnImageUrl(req, outfit);
       return {
         outfitId: outfit.outfitId,
         playerId: outfit.playerId,
@@ -1332,7 +1336,7 @@ app.get('/api/games/:gameId/results', async (req, res) => {
         totalVotes: count,
         products: outfit.products,
         totalPrice: outfit.totalPrice,
-        tryOnImageUrl: resolveTryOnImageUrl(req, outfit),
+        ...(tryOnImageUrl && { tryOnImageUrl }),
         tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
       };
     });

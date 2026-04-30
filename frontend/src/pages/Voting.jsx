@@ -277,6 +277,22 @@ function Voting() {
     }
   };
 
+  // Voting countdown timer — auto-navigate to results when time runs out
+  useEffect(() => {
+    if (votingComplete) return;
+    const interval = setInterval(() => {
+      setVotingTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          navigate(`/results/${gameId}`);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [votingComplete, gameId, navigate]);
+
   const handleGoBack = () => navigate(`/game/${gameId}`);
 
   const fetchOutfits = async () => {

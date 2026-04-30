@@ -34,6 +34,9 @@ describe('Game management API extra coverage', () => {
       playerIds: ['HOST1'],
       maxPlayers: 4,
     });
+    db.getPlayersByGameId.mockResolvedValue([
+      { playerId: 'HOST1', isAudience: false },
+    ]);
 
     const res = await request(app)
       .post('/api/games/ABC123/join')
@@ -52,6 +55,10 @@ describe('Game management API extra coverage', () => {
       playerIds: ['HOST1', 'P2'],
       maxPlayers: 2,
     });
+    db.getPlayersByGameId.mockResolvedValue([
+      { playerId: 'HOST1', isAudience: false },
+      { playerId: 'P2', isAudience: false },
+    ]);
 
     const res = await request(app)
       .post('/api/games/ABC123/join')
