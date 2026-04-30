@@ -1,12 +1,13 @@
 const request = require('supertest');
 
-const { app } = require('../server');
+const { app, _resetShopbopCache } = require('../server');
 
 describe('GET /api/products/search', () => {
   const realFetch = global.fetch;
 
   beforeEach(() => {
     global.fetch = jest.fn();
+    _resetShopbopCache();
   });
 
   afterEach(() => {

@@ -165,14 +165,16 @@ function Results() {
     try {
       const response = await voteApi.getResults(gameId);
       const fetched = response.data.results || [];
-      const data = fetched.length > 0 ? fetched : mockResults;
+      const source = fetched.length > 0 ? fetched : mockResults;
+      const data = source.map(r => ({ ...r, tryOnImageUrl: r.tryOnImageUrl || r.tryOnImage || null }));
       setResults(data);
       setIsLoadingLocal(false);
       startRevealSequence(data);
     } catch {
-      setResults(mockResults);
+      const data = mockResults.map(r => ({ ...r, tryOnImageUrl: r.tryOnImageUrl || r.tryOnImage || null }));
+      setResults(data);
       setIsLoadingLocal(false);
-      startRevealSequence(mockResults);
+      startRevealSequence(data);
     }
   };
 
@@ -289,9 +291,9 @@ function Results() {
             >
               {/* Main Image */}
               <div className="podium-outfit">
-                {result.tryOnImage ? (
+                {result.tryOnImageUrl ? (
                   <img
-                    src={result.tryOnImage}
+                    src={result.tryOnImageUrl}
                     alt={`${result.username}'s look`}
                     className="podium-model-img"
                     referrerPolicy="no-referrer"
@@ -394,9 +396,9 @@ function Results() {
                 <div className="result-item">
                   <div className="result-rank">#{result.rank}</div>
                   <div className="result-outfit-preview">
-                    {result.tryOnImage ? (
+                    {result.tryOnImageUrl ? (
                       <img
-                        src={result.tryOnImage}
+                        src={result.tryOnImageUrl}
                         alt={`${result.username}'s look`}
                         style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '6px' }}
                         referrerPolicy="no-referrer"

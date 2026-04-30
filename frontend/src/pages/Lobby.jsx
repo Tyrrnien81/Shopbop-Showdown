@@ -150,7 +150,7 @@ function Lobby() {
   const handleStartGame = async () => {
     setLoading(true);
     try {
-      const res = await gameApi.startGame(gameId);
+      const res = await gameApi.startGame(gameId, currentPlayer?.playerId);
       // If theme voting phase, navigate there; otherwise straight to game
       if (res.data.game?.status === 'THEME_VOTING') {
         navigate(`/theme-vote/${gameId}`);

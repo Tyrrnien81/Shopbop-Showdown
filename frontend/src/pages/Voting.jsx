@@ -1,8 +1,38 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { lazy, Suspense, useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { gameApi, outfitApi, voteApi } from '../services/api';
 import useGameStore from '../store/gameStore';
 import socketService from '../services/socket';
+
+// Heavy (Three.js bundle) — only loads when the runway is actually about to play.
+const RunwayShow = lazy(() => import('../components/RunwayShow/RunwayShow'));
+
+// If the voting timer is already below this threshold when the page loads,
+// the player is arriving late (likely a refresh) and we skip the runway.
+const RUNWAY_MIN_TIMER_REMAINING = 45;
+
+function RunwayLoading() {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: '#0a0a0a',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'rgba(255, 255, 255, 0.8)',
+        fontFamily: "'Inter', system-ui, sans-serif",
+        fontSize: '13px',
+        letterSpacing: '0.35em',
+        textTransform: 'uppercase',
+        zIndex: 1000,
+      }}
+    >
+      Preparing the runway…
+    </div>
+  );
+}
 
 // Mock outfits for development
 const mockOutfits = [
@@ -39,6 +69,65 @@ const mockOutfits = [
     totalPrice: 2035,
   },
 ];
+
+function VotingControls({ votingTimeLeft, isHost, onEndVoting, disabled }) {
+  if (votingTimeLeft === null && !isHost) return null;
+  const mm = votingTimeLeft !== null ? Math.floor(votingTimeLeft / 60) : 0;
+  const ss = votingTimeLeft !== null ? votingTimeLeft % 60 : 0;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: '12px',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: '12px',
+        flexWrap: 'wrap',
+      }}
+    >
+      {votingTimeLeft !== null && (
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 14px',
+            borderRadius: '999px',
+            background: votingTimeLeft <= 10 ? 'rgba(221, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.12)',
+            color: votingTimeLeft <= 10 ? '#DD0000' : 'inherit',
+            fontSize: '13px',
+            fontWeight: 600,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+          }}
+        >
+          Voting closes in {String(mm).padStart(2, '0')}:{String(ss).padStart(2, '0')}
+        </div>
+      )}
+      {isHost && (
+        <button
+          onClick={onEndVoting}
+          disabled={disabled}
+          style={{
+            padding: '6px 14px',
+            borderRadius: '999px',
+            border: '1px solid currentColor',
+            background: 'transparent',
+            color: 'inherit',
+            fontSize: '13px',
+            fontWeight: 600,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            cursor: disabled ? 'wait' : 'pointer',
+            opacity: disabled ? 0.6 : 1,
+          }}
+        >
+          {disabled ? 'Ending…' : 'End Voting Early'}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function Voting() {
   const { gameId } = useParams();
@@ -78,7 +167,12 @@ function Voting() {
   // Shared state
   const [votingComplete, setVotingComplete] = useState(false);
   const [timeLeft, setTimeLeft] = useState(null);
+  const [votingTimeLeft, setVotingTimeLeft] = useState(null);
+  const [endVotingPending, setEndVotingPending] = useState(false);
   const [voteStatus, setVoteStatus] = useState({ voted: 0, total: 0, players: [] });
+  // Runway plays before the voting UI. Dismissed when the runway completes,
+  // the player skips, or we detect a mid-phase refresh (timer < threshold).
+  const [showRunway, setShowRunway] = useState(true);
 
   // Initialize rankedOutfits when outfits load (ranking mode)
   useEffect(() => {
@@ -148,9 +242,40 @@ function Voting() {
     const onVoteSubmitted = ({ isComplete }) => {
       if (isComplete) setVotingComplete(true);
     };
+    const onVotingTimer = ({ remaining }) => {
+      setVotingTimeLeft(typeof remaining === 'number' ? remaining : null);
+      // Skip the runway for late arrivals (e.g., refresh mid-voting).
+      if (typeof remaining === 'number' && remaining < RUNWAY_MIN_TIMER_REMAINING) {
+        setShowRunway(false);
+      }
+    };
+    const onGameCompleted = () => {
+      setVotingComplete(true);
+      setShowRunway(false);
+      navigate(`/results/${gameId}`);
+    };
     socketService.on('vote-submitted', onVoteSubmitted);
-    return () => socketService.off('vote-submitted', onVoteSubmitted);
-  }, [gameId]);
+    socketService.on('voting-timer', onVotingTimer);
+    socketService.on('game-completed', onGameCompleted);
+    return () => {
+      socketService.off('vote-submitted', onVoteSubmitted);
+      socketService.off('voting-timer', onVotingTimer);
+      socketService.off('game-completed', onGameCompleted);
+    };
+  }, [gameId, navigate]);
+
+  const handleEndVoting = async () => {
+    if (endVotingPending) return;
+    if (!window.confirm('End voting now? Any players who haven\'t voted will be skipped.')) return;
+    setEndVotingPending(true);
+    try {
+      await gameApi.endVoting(gameId, currentPlayer?.playerId);
+      // navigation happens via the game-completed socket event
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to end voting');
+      setEndVotingPending(false);
+    }
+  };
 
   const handleGoBack = () => navigate(`/game/${gameId}`);
 
@@ -159,9 +284,10 @@ function Voting() {
     try {
       const response = await outfitApi.getOutfits(gameId);
       const fetched = response.data.outfits || [];
-      setOutfits(fetched.length > 0 ? fetched : mockOutfits);
+      const source = fetched.length > 0 ? fetched : mockOutfits;
+      setOutfits(source.map(o => ({ ...o, tryOnImageUrl: o.tryOnImageUrl || o.tryOnImage || null })));
     } catch {
-      setOutfits(mockOutfits);
+      setOutfits(mockOutfits.map(o => ({ ...o, tryOnImageUrl: o.tryOnImageUrl || o.tryOnImage || null })));
     } finally {
       setLoading(false);
     }
@@ -309,6 +435,31 @@ function Voting() {
 
   const handleViewResults = () => navigate(`/results/${gameId}`);
 
+  // ── Runway show (plays once before the voting UI) ──
+  if (showRunway) {
+    // Still waiting on outfits? Show the same preloader the runway uses so the transition
+    // is seamless and we don't mount RunwayShow with an empty array.
+    if (allOutfits.length === 0) {
+      return <RunwayLoading />;
+    }
+    const runwayOutfits = allOutfits.map(o => ({
+      tryOnImageUrl: o.tryOnImageUrl,
+      playerName: o.playerName || o.username,
+      totalCost: o.totalPrice,
+      itemCount: o.products?.length || 0,
+      playerId: o.playerId,
+    }));
+    return (
+      <Suspense fallback={<RunwayLoading />}>
+        <RunwayShow
+          outfits={runwayOutfits}
+          theme={game?.themeName || game?.theme || ''}
+          onComplete={() => setShowRunway(false)}
+        />
+      </Suspense>
+    );
+  }
+
   // ── Waiting / Complete screens (shared) ──
   if (hasVoted && !votingComplete) {
     return (
@@ -405,6 +556,12 @@ function Voting() {
               Go Back & Edit ({Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')} left)
             </button>
           )}
+          <VotingControls
+            votingTimeLeft={votingTimeLeft}
+            isHost={currentPlayer?.isHost}
+            onEndVoting={handleEndVoting}
+            disabled={endVotingPending}
+          />
         </header>
 
         {/* Live Voting Tracker */}
@@ -475,8 +632,8 @@ function Voting() {
 
                   {/* Outfit preview */}
                   <div className="rank-outfit-preview">
-                    {outfit.tryOnImage ? (
-                      <img src={outfit.tryOnImage} alt="look" referrerPolicy="no-referrer" />
+                    {outfit.tryOnImageUrl ? (
+                      <img src={outfit.tryOnImageUrl} alt="look" referrerPolicy="no-referrer" />
                     ) : outfit.products[0]?.imageUrl ? (
                       <img src={outfit.products[0].imageUrl} alt="look" referrerPolicy="no-referrer" />
                     ) : (
@@ -530,9 +687,9 @@ function Voting() {
                 {/* Expanded item detail */}
                 {isExpanded && (
                   <div className="rank-item-expanded">
-                    {outfit.tryOnImage && (
+                    {outfit.tryOnImageUrl && (
                       <div className="rank-expanded-model">
-                        <img src={outfit.tryOnImage} alt="full look" referrerPolicy="no-referrer" />
+                        <img src={outfit.tryOnImageUrl} alt="full look" referrerPolicy="no-referrer" />
                       </div>
                     )}
                     <div className="rank-expanded-products">
@@ -590,6 +747,12 @@ function Voting() {
             Go Back & Edit ({Math.floor(timeLeft / 60)}:{String(timeLeft % 60).padStart(2, '0')} left)
           </button>
         )}
+        <VotingControls
+          votingTimeLeft={votingTimeLeft}
+          isHost={currentPlayer?.isHost}
+          onEndVoting={handleEndVoting}
+          disabled={endVotingPending}
+        />
       </header>
 
       {/* Live Voting Tracker */}
@@ -628,12 +791,12 @@ function Voting() {
 
       {/* Outfit Display */}
       <div className={`voting-outfit-display ${revealing ? 'outfit-revealing' : 'outfit-revealed'}`}>
-        <div className={`voting-look-layout ${currentOutfit.tryOnImage ? 'has-model' : ''}`}>
+        <div className={`voting-look-layout ${currentOutfit.tryOnImageUrl ? 'has-model' : ''}`}>
           {/* Main Image — AI generated or product grid fallback */}
           <div className="voting-main-image">
-            {currentOutfit.tryOnImage ? (
+            {currentOutfit.tryOnImageUrl ? (
               <img
-                src={currentOutfit.tryOnImage}
+                src={currentOutfit.tryOnImageUrl}
                 alt={`${currentOutfit.playerName}'s look`}
                 className="voting-model-img"
                 referrerPolicy="no-referrer"
@@ -654,7 +817,7 @@ function Voting() {
           </div>
 
           {/* Side Items Panel — visible when AI image exists */}
-          {currentOutfit.tryOnImage && (
+          {currentOutfit.tryOnImageUrl && (
             <div className="voting-side-items">
               <div className="voting-side-items-header">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

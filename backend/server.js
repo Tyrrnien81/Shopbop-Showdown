@@ -5,6 +5,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const { Server } = require('socket.io');
 const db = require('./db');
+const s3 = require('./s3/s3Client');
 const analyticsRouter = require('./routes/analytics');
 
 // Lambda SDK — loaded only when Lambda mode is active
@@ -38,11 +39,104 @@ const SHOPBOP_CLIENT_ID = process.env.SHOPBOP_CLIENT_ID || 'Shopbop-UW-Team1-202
 
 let io;
 
-// In-memory cache for tryOnImages (too large for DynamoDB's 400KB item limit)
+// Short-term in-memory buffer for try-on images; primary persistence is now S3.
+// Kept as a fallback for the request window when S3 is unconfigured or upload fails.
 const tryOnImageCache = new Map();
+
+// Uploads a try-on image to S3 and returns the public URL.
+// Returns null if S3 is not configured, the image is missing, or the upload fails.
+async function uploadTryOnImageToS3(gameId, playerId, tryOnImage) {
+  if (!tryOnImage || !s3.isConfigured()) return null;
+  try {
+    const key = `outfits/${gameId}/${playerId}.png`;
+    return await s3.uploadImage(tryOnImage, key);
+  } catch (err) {
+    console.error(`S3 upload failed for ${gameId}/${playerId}:`, err.message);
+    return null;
+  }
+}
+
+// Resolves the best available image URL for an outfit. S3 wins when present;
+// otherwise fall back to the in-memory cache served via /api/tryon/image/:outfitId.
+// Returned URL is absolute so <img> and THREE.TextureLoader resolve it correctly
+// regardless of the frontend origin.
+function resolveTryOnImageUrl(req, outfit) {
+  if (outfit.tryOnImageUrl) return outfit.tryOnImageUrl;
+  if (tryOnImageCache.has(outfit.outfitId)) {
+    const host = req.get('host');
+    return `${req.protocol}://${host}/api/tryon/image/${outfit.outfitId}`;
+  }
+  return null;
+}
+
+// Parses cached try-on values (either raw base64 or a full data URL) into bytes + mime.
+function decodeCachedTryOnImage(cached) {
+  if (typeof cached !== 'string') return null;
+  const match = cached.match(/^data:(.+?);base64,(.+)$/);
+  const mimeType = match ? match[1] : 'image/png';
+  const data = match ? match[2] : cached;
+  try {
+    return { buffer: Buffer.from(data, 'base64'), mimeType };
+  } catch {
+    return null;
+  }
+}
 
 // In-memory cache for theme voting (ephemeral, no need for DB)
 const themeVoteCache = new Map(); // gameId -> { options: [...], votes: { playerId: themeId }, timer }
+
+// Voting-phase timeout (safety net so a missing voter can't hang the game forever)
+// gameId -> { expiresAt, intervalRef, finalized }
+const votingTimerCache = new Map();
+const VOTING_DURATION_SECONDS = 60;
+
+function clearVotingTimer(gameId) {
+  const entry = votingTimerCache.get(gameId);
+  if (!entry) return;
+  if (entry.intervalRef) clearInterval(entry.intervalRef);
+  votingTimerCache.delete(gameId);
+}
+
+function startVotingTimer(gameId) {
+  // Safety: clear any prior timer for this game before starting a new one
+  clearVotingTimer(gameId);
+  const expiresAt = Date.now() + VOTING_DURATION_SECONDS * 1000;
+
+  const tick = () => {
+    const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+    if (io) io.to(gameId).emit('voting-timer', { gameId, remaining });
+    if (remaining <= 0) {
+      clearVotingTimer(gameId);
+      finalizeVoting(gameId, 'timeout').catch((err) => {
+        console.error(`Voting timeout finalize failed for ${gameId}:`, err.message);
+      });
+    }
+  };
+
+  const intervalRef = setInterval(tick, 1000);
+  votingTimerCache.set(gameId, { expiresAt, intervalRef, finalized: false });
+  tick(); // emit the initial countdown value immediately
+}
+
+async function finalizeVoting(gameId, reason) {
+  const entry = votingTimerCache.get(gameId);
+  if (entry?.finalized) return;
+  if (entry) entry.finalized = true;
+  clearVotingTimer(gameId);
+
+  try {
+    const game = await db.getGame(gameId);
+    if (!game) return;
+    if (game.status !== 'COMPLETED') {
+      await db.updateGameStatus(gameId, 'COMPLETED', { endedAt: new Date().toISOString() });
+    }
+  } catch (err) {
+    console.error(`finalizeVoting DB error (${gameId}):`, err.message);
+  }
+
+  if (io) io.to(gameId).emit('game-completed', { gameId, reason });
+  console.log(`Game ${gameId} completed (${reason})`);
+}
 
 const ALL_THEMES = [
   { id: 'runway', name: 'Runway Ready', description: 'High-fashion editorial looks.', icon: '✨' },
@@ -180,6 +274,44 @@ function getCategories(dept) {
 // SHOPBOP API PROXY HELPERS
 // ============================================================
 
+// ---------- Shopbop proxy resilience ----------
+// Shopbop is an external dependency we don't control; if it blips during a
+// demo, product browsing goes dark. Defences layered here:
+//   1. In-memory Map cache keyed by the full request URL, 10-minute TTL.
+//      Successful, non-empty responses are cached.
+//   2. 10-second request timeout via AbortController (so a hanging upstream
+//      can't tie up an Express worker).
+//   3. Single retry after a 1-second wait on 5xx or timeout.
+//   4. If both attempts fail and a stale cache entry exists, we return it
+//      with _cached / _stale flags set rather than surfacing an error.
+const shopbopCache = new Map(); // key: full URL string -> { data, timestamp }
+const SHOPBOP_CACHE_TTL_MS = 10 * 60 * 1000;
+const SHOPBOP_TIMEOUT_MS = 10_000;
+const SHOPBOP_RETRY_DELAY_MS = 1000;
+
+function _resetShopbopCache() {
+  shopbopCache.clear();
+}
+
+function shopbopResponseIsEmpty(data) {
+  if (!data || typeof data !== 'object') return true;
+  const count =
+    (Array.isArray(data.products) ? data.products.length : 0) +
+    (Array.isArray(data.results) ? data.results.length : 0) +
+    (Array.isArray(data.items) ? data.items.length : 0);
+  return count === 0;
+}
+
+function shopbopShouldRetry(err) {
+  if (err?.name === 'AbortError') return true;
+  const status = err?.status;
+  return typeof status === 'number' && status >= 500 && status < 600;
+}
+
+function sleepMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function shopbopFetch(path, params = {}) {
   const url = new URL(`${SHOPBOP_API_BASE}${path}`);
   // Always include required params per Shopbop API docs
@@ -187,7 +319,16 @@ async function shopbopFetch(path, params = {}) {
   Object.entries({ ...defaults, ...params }).forEach(([k, v]) => {
     if (v != null && v !== '') url.searchParams.set(k, String(v));
   });
-  console.log('Shopbop URL:', url.toString());
+  const cacheKey = url.toString();
+  const now = Date.now();
+
+  // Fresh cache hit — skip the network entirely.
+  const cached = shopbopCache.get(cacheKey);
+  if (cached && now - cached.timestamp < SHOPBOP_CACHE_TTL_MS) {
+    return { ...cached.data, _cached: true, _stale: false };
+  }
+
+  console.log('Shopbop URL:', cacheKey);
 
   const headers = {
     'accept': 'application/json',
@@ -198,12 +339,58 @@ async function shopbopFetch(path, params = {}) {
     headers['x-api-key'] = process.env.SHOPBOP_API_KEY;
   }
 
-  const res = await fetch(url.toString(), { headers });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Shopbop API ${res.status}: ${text.slice(0, 200)}`);
+  async function attempt() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SHOPBOP_TIMEOUT_MS);
+    try {
+      const res = await fetch(cacheKey, { headers, signal: controller.signal });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        const err = new Error(`Shopbop API ${res.status}: ${text.slice(0, 200)}`);
+        err.status = res.status;
+        throw err;
+      }
+      return await res.json();
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
-  return res.json();
+
+  function serveStaleOrThrow(err) {
+    if (cached) {
+      console.warn(`Shopbop fetch failed (${err.message}); serving stale cache for ${cacheKey}`);
+      return { ...cached.data, _cached: true, _stale: true };
+    }
+    throw err;
+  }
+
+  let firstError;
+  try {
+    const data = await attempt();
+    if (!shopbopResponseIsEmpty(data)) {
+      shopbopCache.set(cacheKey, { data, timestamp: now });
+    }
+    return data;
+  } catch (err) {
+    firstError = err;
+    if (!shopbopShouldRetry(err)) {
+      return serveStaleOrThrow(err);
+    }
+    console.warn(`Shopbop fetch attempt 1 failed (${err.message}); retrying in ${SHOPBOP_RETRY_DELAY_MS}ms`);
+  }
+
+  await sleepMs(SHOPBOP_RETRY_DELAY_MS);
+
+  try {
+    const data = await attempt();
+    if (!shopbopResponseIsEmpty(data)) {
+      shopbopCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    return data;
+  } catch (err2) {
+    console.warn(`Shopbop fetch retry failed (${err2.message})`);
+    return serveStaleOrThrow(err2 || firstError);
+  }
 }
 
 // Normalize image URL — Shopbop may return relative paths
@@ -722,9 +909,13 @@ app.post('/api/games/:gameId/ready', async (req, res) => {
 // POST /api/games/:gameId/start — start the game (host only)
 app.post('/api/games/:gameId/start', async (req, res) => {
   try {
+    const { playerId } = req.body || {};
     const game = await db.getGame(req.params.gameId);
     if (!game) return res.status(404).json({ error: 'Game not found' });
     if (game.status !== 'LOBBY') return res.status(400).json({ error: 'Game already started' });
+    if (!playerId || playerId !== game.hostPlayerId) {
+      return res.status(403).json({ error: 'Only the host can start the game' });
+    }
 
     // Solo mode or host-pick mode: skip theme voting, go straight to PLAYING
     if (game.singlePlayer || game.themeMode === 'pick') {
@@ -857,18 +1048,22 @@ app.post('/api/outfits', async (req, res) => {
     // Allow re-submission: update existing outfit if player already submitted
     if (player.hasSubmitted && player.outfitId) {
       const submittedAt = new Date().toISOString();
-      await db.updateOutfit(player.outfitId, {
+      const tryOnImageUrl = await uploadTryOnImageToS3(gameId, playerId, tryOnImage);
+      const updates = {
         products: outfitProducts || [],
         totalPrice: totalPrice || 0,
         submittedAt,
-      });
-      // Cache tryOnImage in memory (too large for DynamoDB)
+      };
+      if (tryOnImageUrl) updates.tryOnImageUrl = tryOnImageUrl;
+      await db.updateOutfit(player.outfitId, updates);
+      // Short-term in-memory fallback (used only if S3 upload failed or is unconfigured)
       if (tryOnImage) tryOnImageCache.set(player.outfitId, tryOnImage);
       console.log(`Outfit ${player.outfitId} re-submitted by player ${playerId}`);
-      return res.status(200).json({ outfitId: player.outfitId, submittedAt });
+      return res.status(200).json({ outfitId: player.outfitId, submittedAt, tryOnImageUrl: tryOnImageUrl || null });
     }
 
     const outfitId = generateId();
+    const tryOnImageUrl = await uploadTryOnImageToS3(gameId, playerId, tryOnImage);
     const outfit = {
       outfitId,
       gameId,
@@ -876,9 +1071,10 @@ app.post('/api/outfits', async (req, res) => {
       products: outfitProducts || [],
       totalPrice: totalPrice || 0,
       submittedAt: new Date().toISOString(),
+      ...(tryOnImageUrl && { tryOnImageUrl }),
     };
 
-    // Cache tryOnImage in memory (too large for DynamoDB)
+    // Short-term in-memory fallback (used only if S3 upload failed or is unconfigured)
     if (tryOnImage) tryOnImageCache.set(outfitId, tryOnImage);
 
     await Promise.all([
@@ -910,13 +1106,14 @@ app.post('/api/outfits', async (req, res) => {
         await db.updateGameStatus(gameId, 'VOTING');
         newStatus = 'VOTING';
         console.log(`Game ${gameId} moved to VOTING phase`);
+        startVotingTimer(gameId);
       }
     }
 
     // Notify all clients in the room
     if (io) io.to(gameId).emit('outfit-submitted', { submittedCount, totalPlayers, gameStatus: newStatus });
 
-    res.status(201).json({ outfitId, submittedAt: outfit.submittedAt });
+    res.status(201).json({ outfitId, submittedAt: outfit.submittedAt, tryOnImageUrl: tryOnImageUrl || null });
   } catch (err) {
     console.error('Submit outfit error:', err.message);
     res.status(500).json({ error: 'Failed to submit outfit' });
@@ -940,6 +1137,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           playerId: outfit.playerId,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
+          tryOnImageUrl: resolveTryOnImageUrl(req, outfit),
           tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
         });
       } else {
@@ -951,6 +1149,7 @@ app.get('/api/games/:gameId/outfits', async (req, res) => {
           playerName: player?.username,
           products: outfit.products,
           totalPrice: outfit.totalPrice,
+          tryOnImageUrl: resolveTryOnImageUrl(req, outfit),
           tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
         });
       }
@@ -1020,10 +1219,7 @@ app.post('/api/votes', async (req, res) => {
     const votesRemaining = gamePlayers.filter(p => !p.hasVoted).length;
 
     if (votesRemaining === 0) {
-      await db.updateGameStatus(gameId, 'COMPLETED', {
-        endedAt: new Date().toISOString(),
-      });
-      console.log(`Game ${gameId} completed`);
+      await finalizeVoting(gameId, 'all-voted');
     }
 
     // Notify all clients in the room
@@ -1033,6 +1229,31 @@ app.post('/api/votes', async (req, res) => {
   } catch (err) {
     console.error('Submit votes error:', err.message);
     res.status(500).json({ error: 'Failed to submit votes' });
+  }
+});
+
+// POST /api/games/:gameId/end-voting — host force-completes the voting phase
+app.post('/api/games/:gameId/end-voting', async (req, res) => {
+  try {
+    const { playerId } = req.body || {};
+    const gameId = req.params.gameId;
+    const game = await db.getGame(gameId);
+    if (!game) return res.status(404).json({ error: 'Game not found' });
+    if (!playerId || playerId !== game.hostPlayerId) {
+      return res.status(403).json({ error: 'Only the host can end voting' });
+    }
+    if (game.status === 'COMPLETED') {
+      return res.json({ success: true, alreadyCompleted: true });
+    }
+    if (game.status !== 'VOTING') {
+      return res.status(400).json({ error: 'Game is not in voting phase' });
+    }
+
+    await finalizeVoting(gameId, 'host-ended');
+    res.json({ success: true });
+  } catch (err) {
+    console.error('End voting error:', err.message);
+    res.status(500).json({ error: 'Failed to end voting' });
   }
 });
 
@@ -1111,6 +1332,7 @@ app.get('/api/games/:gameId/results', async (req, res) => {
         totalVotes: count,
         products: outfit.products,
         totalPrice: outfit.totalPrice,
+        tryOnImageUrl: resolveTryOnImageUrl(req, outfit),
         tryOnImage: tryOnImageCache.get(outfit.outfitId) || outfit.tryOnImage || null,
       };
     });
@@ -1451,6 +1673,21 @@ async function invokeTryonLambda(products, productImages, variation, userPhoto) 
 }
 
 // POST /api/tryon/generate — generate 3 try-on images
+// GET /api/tryon/image/:outfitId — serves the base64 image from the in-memory
+// cache as a real image response (Content-Type: image/png). Used when S3 is
+// not configured; the outfits/results endpoints point tryOnImageUrl here.
+app.get('/api/tryon/image/:outfitId', (req, res) => {
+  const cached = tryOnImageCache.get(req.params.outfitId);
+  if (!cached) return res.status(404).json({ error: 'Image not found' });
+
+  const decoded = decodeCachedTryOnImage(cached);
+  if (!decoded) return res.status(500).json({ error: 'Failed to decode cached image' });
+
+  res.setHeader('Content-Type', decoded.mimeType);
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.send(decoded.buffer);
+});
+
 app.post('/api/tryon/generate', async (req, res) => {
   // Block only if neither local key nor Lambda is available
   if (!GEMINI_API_KEY && !TRYON_LAMBDA_NAME) {
@@ -1646,4 +1883,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, server };
+module.exports = { app, server, _resetShopbopCache };

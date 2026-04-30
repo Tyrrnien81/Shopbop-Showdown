@@ -1,9 +1,13 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { Component } from 'react';
+import { Component, lazy, Suspense } from 'react';
 import { Home, CreateGame, Lobby, ThemeVote, Game, Voting, Results, Analytics, HallOfFame, JoinRedirect, BrowseRooms} from './pages';
 import GuidedTour from './components/GuidedTour';
 import useGameStore from './store/gameStore';
 import './App.css';
+
+// Dev-only preview route — lets us iterate on the runway show visuals without
+// running a full 2-player game. Remove (or gate on a flag) before merging.
+const RunwayPreview = lazy(() => import('./components/RunwayShow/RunwayPreview'));
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -58,6 +62,14 @@ function AppContent() {
           <Route path="/hall-of-fame" element={<HallOfFame />} />
           <Route path="/join/:gameId" element={<JoinRedirect />} />
           <Route path="/browse" element={<BrowseRooms />} />
+          <Route
+            path="/runway-test"
+            element={
+              <Suspense fallback={<div style={{ height: '100vh', background: '#0a0a0a' }} />}>
+                <RunwayPreview />
+              </Suspense>
+            }
+          />
         </Routes>
       </div>
       <GuidedTour active={tourActive} onClose={endTour} />
